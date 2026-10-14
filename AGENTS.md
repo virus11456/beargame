@@ -7,3 +7,7 @@
 - Before handing off changes, run npm test, npm run check and npm run build.
 - Browser tests and real-device tests must be reported separately from simulation tests.
 - Keep original procedural visuals and do not import other games' branding or assets.
+
+## Delivery workflow
+- User instruction (2026-10-15): after required checks pass, commit and push project updates directly to main. Do not create a PR unless the user requests one.
+- Preserve other contributors' changes; never force-push to main.
