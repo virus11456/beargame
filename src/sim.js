@@ -19,10 +19,10 @@ export function step(s,dt,input={x:0,z:0}){
  if(d<5&&s.z<-.5){if(d>1.5){b.x+=(s.x-b.x)/d*1.7*dt;b.z+=(s.z-b.z)/d*1.7*dt;}else if(b.cool<=0){s.hp-=9;b.cool=1.4;events.push({type:'hurt'});}}else{const home=distance({x:b.hx,z:b.hz},b);if(home>.1){b.x+=(b.hx-b.x)/home*dt;b.z+=(b.hz-b.z)/home*dt;}}
  }
  if(s.hp<=0){s.x=0;s.z=7;s.hp=100;events.push({type:'rescue'});}
- s.drops=s.drops.filter(d=>{if(distance(s,d)<config.pickup&&s.bag.length<capacity(s)){s.bag.push(d.type);events.push({type:'pickup'});return false;}return true;});
+ s.drops=s.drops.filter(d=>{if(distance(s,d)<config.pickup&&s.bag.length<capacity(s)){s.bag.push(d.type);events.push({type:'pickup',resource:d.type,from:{x:d.x,z:d.z},to:{x:s.x,z:s.z}});return false;}return true;});
  const speed=1+s.upgrades.speed*.3;
  for(const st of stations){const q=s.queues[st.id];const nearby=distance(s,{x:st.x,z:st.z+1.7})<config.stationRange;
- if(nearby&&s.transfer<=0){const idx=s.bag.indexOf(st.input);if(idx>=0&&q.length<config.queueLimit){q.push(s.bag.splice(idx,1)[0]);s.transfer=.13;events.push({type:'deposit'});}else if(st.output&&s.outputs[st.id]>0&&s.bag.length<capacity(s)){s.outputs[st.id]--;s.bag.push(st.output);s.transfer=.13;events.push({type:'pickup'});}}
+ if(nearby&&s.transfer<=0){const idx=s.bag.indexOf(st.input);if(idx>=0&&q.length<config.queueLimit){q.push(s.bag.splice(idx,1)[0]);s.transfer=.13;events.push({type:'deposit',resource:st.input,from:{x:s.x,z:s.z},to:{x:st.x,z:st.z}});}else if(st.output&&s.outputs[st.id]>0&&s.bag.length<capacity(s)){s.outputs[st.id]--;s.bag.push(st.output);s.transfer=.13;events.push({type:'pickup',resource:st.output,from:{x:st.x,z:st.z},to:{x:s.x,z:s.z}});}}
  if(q.length&&(!st.output||s.outputs[st.id]<config.stockLimit)){s.timers[st.id]+=dt*speed*(st.id==='grill'&&s.expanded?2:1);if(s.timers[st.id]>=st.seconds){s.timers[st.id]-=st.seconds;q.shift();if(st.id==='sell'){const value=config.sale+(s.expanded?4:0);s.coins+=value;s.earned+=value;s.sold++;events.push({type:'sale',value,x:st.x,z:st.z});}else s.outputs[st.id]++;}}else s.timers[st.id]=0;
  }
  if(s.helper){s.helperTimer+=dt;if(s.helperTimer>1){s.helperTimer=0;if(s.outputs.cut>0&&s.queues.grill.length<config.queueLimit){s.outputs.cut--;s.queues.grill.push('cut');}if(s.outputs.grill>0&&s.queues.sell.length<config.queueLimit){s.outputs.grill--;s.queues.sell.push('meal');}}}
