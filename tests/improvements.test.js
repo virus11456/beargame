@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {fresh,step,serialize,restore,config} from '../src/sim.js';
+import {nextAction} from '../src/guide.js';
+import {SAVE_KEY,saveGame,loadGame,resetGame} from '../src/storage.js';
+const wait=(s,n)=>{for(let i=0;i<n*30;i++)step(s,1/30);};
+function memory(){const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)};}
+test('guide follows actual stock and returns to hunting after a sale',()=>{const s=fresh();s.kills=1;s.sold=1;assert.equal(nextAction(s).id,'hunt');s.bag=['raw'];assert.equal(nextAction(s).id,'cut');s.bag=['cut'];assert.equal(nextAction(s).id,'grill');s.bag=['meal'];assert.equal(nextAction(s).id,'sell');s.bag=[];s.outputs.grill=1;assert.equal(nextAction(s).id,'grill');});
+test('guide prioritizes recovery and remaining loot',()=>{const s=fresh();s.z=-5;s.hp=20;assert.equal(nextAction(s).id,'heal');s.hp=100;s.drops=[{x:1,z:-5,type:'raw'}];assert.equal(nextAction(s).id,'loot');});
+test('attack selects closest enemy, not array order',()=>{const s=fresh();s.z=-5;s.bears[0].x=2;s.bears[0].z=-5;s.bears[1].x=.5;s.bears[1].z=-5;step(s,1/30);assert.equal(s.bears[0].hp,56);assert.equal(s.bears[1].hp,42);});
+test('full output buffer stops production without consuming ingredients',()=>{const s=fresh();s.outputs.cut=config.stockLimit;s.queues.cut=['raw'];wait(s,3);assert.equal(s.outputs.cut,30);assert.deepEqual(s.queues.cut,['raw']);s.outputs.cut--;wait(s,2);assert.equal(s.outputs.cut,30);assert.deepEqual(s.queues.cut,[]);});
+test('uncollected loot prevents endless respawns without deleting loot',()=>{const s=fresh();s.drops=Array.from({length:128},()=>({x:-10,z:-10,type:'raw'}));s.bears[0].hp=0;s.bears[0].respawn=.01;wait(s,20);assert.equal(s.drops.length,128);assert.equal(s.bears[0].hp,0);s.drops.pop();wait(s,1);assert.equal(s.bears[0].hp,56);});
+test('corrupt cooldowns do not disable attacks permanently after reload',()=>{const s=fresh();s.attack=null;assert.deepEqual(restore(serialize(s)),fresh());});
+test('backup restores last valid state when primary save is damaged',()=>{const store=memory(),s=fresh();s.coins=12;saveGame(store,s);s.coins=24;saveGame(store,s);store.setItem(SAVE_KEY,'{broken');const loaded=loadGame(store);assert.equal(loaded.state.coins,12);assert.ok(loaded.notice.includes('備份'));});
+test('existing version two saves retain stock and timers',()=>{const store=memory(),s=fresh();s.time=55;s.attack=-4;s.transfer=-12;s.queues.grill=['cut'];s.timers.grill=.7;store.setItem(SAVE_KEY,serialize(s));assert.deepEqual(loadGame(store).state,s);});
+test('reset clears backup so old progress cannot reappear',()=>{const store=memory(),s=fresh();s.coins=12;saveGame(store,s);saveGame(store,s);resetGame(store,fresh());assert.equal(store.getItem(SAVE_KEY+'-backup'),null);assert.equal(loadGame(store).state.coins,0);});
+test('blocked browser storage is reported without crashing',()=>{assert.match(loadGame({getItem(){throw Error('blocked');}}).notice,/儲存/);});
