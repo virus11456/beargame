@@ -1,13 +1,8 @@
-import { fresh, restore, serialize } from './sim.js';
+import { fresh, parseSave, serialize } from './sim.js';
 export const SAVE_KEY = 'polar-camp-three-v2';
 const valid = text => {
   if (!text) return null;
-  const state = restore(text);
-  // restore is intentionally forgiving; only accept an exact canonical round trip.
-  try {
-    const candidate = JSON.parse(text);
-    return candidate?.version === 2 && JSON.stringify(candidate) === serialize(state) ? state : null;
-  } catch { return null; }
+  try { return parseSave(text); } catch { return null; }
 };
 export function loadGame(storage) {
   try {
