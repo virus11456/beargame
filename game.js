@@ -305,12 +305,14 @@ function updateHud() {
   $('stage-goal').textContent = goal === null ? `${storyOf(s).goal} · ${s.earned}` : cleared ? `達成 ${s.earned} / ${goal}` : `${storyOf(s).goal} ${s.earned} / ${goal}`;
   $('stage-bar').style.width = (goal === null ? 100 : Math.min(100, s.earned / goal * 100)) + '%';
   $('stage').classList.toggle('cleared', cleared); $('next-stage').hidden = !(cleared && hasNext(s));
+  let nearPad = null, nearDist = 2.3;
   padViews.forEach(({ pad: p }, i) => {
-    const info = padLabel(s, p), el = padLabels[i].el;
-    const near = distance(s, p) < 3.4;
-    el.className = 'label pad-label' + (info.done ? ' done' : info.locked ? ' locked' : s.coins >= info.remaining ? ' affordable' : '') + (near ? ' near' : '');
-    el.innerHTML = `${icon(p.icon, 'ic pad-icon')}${info.done ? `<b class="max">${icon('check')}MAX</b>` : info.locked ? `<b class="lock">${icon('lock')}${info.remaining}</b>` : `<b>${icon('bill')}${info.remaining}</b>`}<small>${info.done ? p.name + '・已升到最高' : info.locked ? p.name + '・需先' + p.requires : near ? `${p.name} Lv.${level(s, p.id) + 1}・${p.detail}` : p.name}</small>`;
+    const info = padLabel(s, p), el = padLabels[i].el, d = distance(s, p);
+    if (d < nearDist) { nearDist = d; nearPad = { p, info }; }
+    el.className = 'label pad-label' + (info.done ? ' done' : info.locked ? ' locked' : s.coins >= info.remaining ? ' affordable' : '') + (d < 2.3 ? ' near' : '');
+    el.innerHTML = `${icon(p.icon, 'ic pad-icon')}${info.done ? `<b class="max">${icon('check')}MAX</b>` : info.locked ? `<b class="lock">${icon('lock')}${info.remaining}</b>` : `<b>${icon('bill')}${info.remaining}</b>`}<small>${p.name}</small>`;
   });
+  if (nearPad) { const { p, info } = nearPad; $('objective').querySelector('span').textContent = info.done ? `${p.name}已升到最高` : info.locked ? `${p.name}・需先${p.requires}` : `${p.name} Lv.${level(s, p.id) + 1}・${p.detail}（還差 ${info.remaining} 元）`; }
   tableLabel.el.innerHTML = `販售桌 · ${s.stock} 份<small>${s.stock ? '客人排隊購買中' : '把背上的肉堆到這裡'}</small>`;
   cashLabel.el.innerHTML = s.cash ? `$ ${s.cash}<small>走過來收錢</small>` : `收款處<small>客人付的錢會放在這</small>`; cashLabel.el.hidden = s.cash === 0 && s.sold > 0;
   bubble.el.className = 'label bubble' + (s.stock ? '' : ' wait'); bubble.el.innerHTML = s.stock ? icon('meat', 'ic big') : '等肉…';
