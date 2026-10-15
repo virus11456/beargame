@@ -139,8 +139,6 @@ function buildSlash(range, angle) {
   slashGroup.add(slashMesh, slashInner);
 }
 let bearViews = [];
-const shouts = []; const hitLines = ['嗷！', '好痛！', '欸不是', '別打臉！', '我是熊欸', '嗚嗚', '住手啊', '好冷又好痛'], killLines = ['我不玩了', '媽呀——', '再見…', '我的肉！', '先走了', '呃啊啊', '我會回來的', '這不公平'];
-function shout(x, z, lines) { if (shouts.length >= 8 || Math.random() < .35) return; const el = document.createElement('span'); el.className = 'shout'; el.textContent = lines[Math.floor(Math.random() * lines.length)]; $('labels').append(el); shouts.push({ el, p: new THREE.Vector3(x, 2.6, z), life: 1, vx: (Math.random() - .5) * .6 }); }
 function preyAt(x, z, id) { if (id !== undefined && bearViews[id]) return bearViews[id]; let best = null, bd = .9; for (const g of bearViews) { if (!g.visible) continue; const d = Math.hypot(g.position.x - x, g.position.z - z); if (d < bd) { bd = d; best = g; } } return best; }
 function buildBears() {
   for (const g of bearViews) scene.remove(g);
@@ -155,7 +153,7 @@ function applyTheme() {
 }
 function switchState(next, message) {
   s = next; target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
-  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0; for (const sh of shouts) sh.el.remove(); shouts.length = 0;
+  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
   buildBears(); applyTheme(); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
 }
 buildBears();
@@ -307,8 +305,8 @@ function draw(t) {
       const events = step(s, 1 / 30, { x, z });
       for (const e of events) {
         if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; beep(220, .12, 'sawtooth', .025); }
-        else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); shout(e.x, e.z, hitLines); const g = preyAt(e.x, e.z, e.id); if (g) { const u = g.userData; u.hit = .4; const fx = e.from?.x ?? s.x, fz = e.from?.z ?? s.z; const d = Math.hypot(e.x - fx, e.z - fz) || 1; u.hitDir = { x: (e.x - fx) / d, z: (e.z - fz) / d }; } }
-        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); beep(160, .15, 'square', .03); shout(e.x, e.z, killLines); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
+        else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); const g = preyAt(e.x, e.z, e.id); if (g) { const u = g.userData; u.hit = .4; const fx = e.from?.x ?? s.x, fz = e.from?.z ?? s.z; const d = Math.hypot(e.x - fx, e.z - fz) || 1; u.hitDir = { x: (e.x - fx) / d, z: (e.z - fz) / d }; } }
+        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); beep(160, .15, 'square', .03); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
         else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); beep(700 + Math.min(40, s.meat) * 12, .05); } }
         else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) beep(520, .05); }
         else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) beep(980, .06); }
@@ -417,7 +415,6 @@ function draw(t) {
     else { e.position.y += dt * u.rise; e.scale.multiplyScalar(1 + dt * u.grow); e.material.opacity = Math.max(0, u.life / u.max); }
     if (u.life <= 0) { scene.remove(e); effects.splice(i, 1); }
   }
-  for (let i = shouts.length - 1; i >= 0; i--) { const sh = shouts[i]; sh.life -= dt * .9; sh.p.y += dt * 1.6; sh.p.x += sh.vx * dt; const v = sh.p.clone().project(camera); sh.el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; sh.el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; sh.el.style.opacity = Math.min(1, sh.life * 2); sh.el.style.transform = `translate(-50%,-100%) rotate(${(sh.vx * 20).toFixed(1)}deg) scale(${(1 + (1 - sh.life) * .3).toFixed(2)})`; if (sh.life <= 0) { sh.el.remove(); shouts.splice(i, 1); } }
   for (const { el, p } of labels) { const v = p.clone().project(camera); el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; el.style.display = v.z > 1 ? 'none' : ''; }
   if (t > toastUntil) $('toast').style.opacity = 0;
   hudTime += dt; if (hudTime > .12 || s.coins !== lastCoins) { updateHud(); hudTime = 0; lastCoins = s.coins; }
