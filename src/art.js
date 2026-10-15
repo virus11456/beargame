@@ -51,26 +51,25 @@ const preyLooks = {
 export function createBear(kind = 'bear') {
   const look = preyLooks[kind] || preyLooks.bear;
   const g = new THREE.Group(), inner = new THREE.Group(); g.add(inner);
-  const body = part(inner, look.fur, 0, .85, 0, .85, .62, 1.2, smooth);
-  part(inner, look.belly, 0, .62, -.05, .75, .4, 1.05, smooth, false);
+  const flashMat = () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .78, emissive: new THREE.Color('#ff2a2a'), emissiveIntensity: 0 });
+  // One merged mesh for the torso, one for the head: a bear costs eight draw calls instead of fifteen.
+  const torso = [tinted(smooth, look.fur, M(0, .85, 0, .85, .62, 1.2)), tinted(smooth, look.belly, M(0, .62, -.05, .75, .4, 1.05))];
+  if (kind === 'giant') torso.push(tinted(smooth, '#c9d8e0', M(-.3, 1.45, .2, .5, .25, .7)), tinted(smooth, '#c9d8e0', M(.35, 1.4, -.3, .45, .22, .6)));
+  if (kind === 'wolf') torso.push(tinted(smooth, look.fur, M(0, 1, -1.35, .16, .16, .7)));
+  const body = new THREE.Mesh(mergeGeometries(torso, false), flashMat()); body.castShadow = true; body.receiveShadow = true; inner.add(body);
+  const earW = kind === 'wolf' ? .11 : .13, earH = kind === 'wolf' ? .24 : .15;
+  const headParts = [tinted(smooth, look.head, M(0, 0, 0, .52, .45, .5)), tinted(smooth, look.snout, M(0, -.12, .45, .3, .21, .25)), tinted(smooth, '#2b3238', M(0, -.08, .67, .1, .08, .07))];
+  for (const x of [-.34, .34]) headParts.push(tinted(smooth, look.ear, M(x, .38, -.17, earW, earH, .11)), tinted(smooth, '#24303a', M(x * .72, .16, .37, .035, .04, .025)));
   const head = new THREE.Group(); head.position.set(0, 1.3, 1.05); inner.add(head);
-  part(head, look.head, 0, 0, 0, .52, .45, .5, smooth, false);
-  part(head, look.snout, 0, -.12, .45, .3, .21, .25, smooth, false);
-  part(head, '#2b3238', 0, -.08, .67, .1, .08, .07, smooth, false);
-  for (const x of [-.34, .34]) { part(head, look.ear, x, .38, -.17, kind === 'wolf' ? .11 : .13, kind === 'wolf' ? .24 : .15, .11, smooth, false); part(head, '#24303a', x * .72, .16, .37, .035, .04, .025, smooth, false); }
+  const headMesh = new THREE.Mesh(mergeGeometries(headParts, false), flashMat()); head.add(headMesh);
   const legs = [];
   for (const x of [-.52, .52]) for (const z of [-.75, .7]) legs.push(part(inner, look.leg, x, .38, z, .48, .72, .52, rounded, false));
-  if (kind === 'giant') { part(inner, '#c9d8e0', -.3, 1.45, .2, .5, .25, .7, smooth, false); part(inner, '#c9d8e0', .35, 1.4, -.3, .45, .22, .6, smooth, false); }
-  if (kind === 'wolf') part(inner, look.fur, 0, 1, -1.35, .16, .16, .7, smooth, false);
-  // Own material copies so a hit can flash this animal red without tinting the herd.
-  const mats = [];
-  inner.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive = new THREE.Color('#ff2a2a'); m.material.emissiveIntensity = 0; mats.push(m.material); } });
   g.scale.setScalar(look.scale);
   const bar = new THREE.Group(); bar.position.y = 2.25; g.add(bar);
   const back = part(bar, '#2a2a2a', 0, 0, 0, 1.4, .1, .12, unit, false);
   const fill = part(bar, kind === 'giant' ? '#ff8c3a' : '#ff4d4d', 0, .01, .02, 1.4, .12, .12, unit, false);
   bar.scale.setScalar(1 / look.scale);
-  g.userData = { bar: { group: bar, back, fill }, body, inner, head, legs, mats, kind, hit: 0, dying: 0, spawn: 0, lunge: 0, hitDir: { x: 0, z: 1 }, hp: 0 };
+  g.userData = { bar: { group: bar, back, fill }, body, inner, head, legs, mats: [body.material, headMesh.material], kind, hit: 0, dying: 0, spawn: 0, lunge: 0, hitDir: { x: 0, z: 1 }, hp: 0 };
   return g;
 }
 

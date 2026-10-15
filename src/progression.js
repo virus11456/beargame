@@ -5,7 +5,7 @@ import { stageOf } from './stages.js';
 // applies when it reaches zero. Partial payments stay on the pad.
 export const pads = [
   { id: 'weapon', name: '武器', icon: 'sword', x: -6, z: -3, prices: [45, 100, 200, 400, 800], detail: '更寬的揮砍與更高傷害' },
-  { id: 'bag', name: '上限', icon: 'stack', x: -2, z: -3, prices: [10, 60, 150, 300, 600], detail: '每級多背 20 份肉' },
+  { id: 'bag', name: '上限', icon: 'stack', x: -2, z: -3, prices: [10, 60, 150, 300, 600], detail: '每級多背 20 份肉；蓋肉倉後桌上可放 400 份' },
   { id: 'speed', name: '速度', icon: 'speed', x: -6, z: 1.5, prices: [100, 250, 500, 900], detail: '移動速度 +15%' },
   { id: 'herd', name: '獵場', icon: 'bear', x: -2, z: 1.5, prices: [320, 700, 1500], detail: '更多北極熊，更大的獵場' },
   { id: 'helper', name: '助手', icon: 'helper', x: -6, z: 5, prices: [425], detail: '自動撿肉送到桌上', requires: '售出 30 份' },

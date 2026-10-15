@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, meatGeometry, meatMaterial, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
-import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf } from './src/sim.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf, stockLimit } from './src/sim.js';
 import { gatesOf, maxCamp, buildingSlots } from './src/camp.js';
 import { themes } from './src/stages.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
@@ -114,7 +114,7 @@ function syncBuildings(animate) {
 const tableGroup = new THREE.Group(); tableGroup.position.set(table.x + .8, 0, table.z); scene.add(tableGroup);
 for (const x of [-.55, .55]) for (const z of [-1.4, 1.4]) box(tableGroup, '#6d4f36', x, .5, z, .18, 1, .18);
 box(tableGroup, '#b8895b', 0, 1.02, 0, 1.7, .16, 3.5); box(tableGroup, '#8f6744', 0, .92, 0, 1.75, .06, 3.55, false);
-const tableMeat = meatInstanced(config.stockLimit, tableGroup);
+const tableMeat = meatInstanced(config.stockLimit + 160, tableGroup);
 flatRing(table.x, table.z, '#ffffff', tableRange, .1, .55);
 box(scene, '#4d9ad6', table.x - .4, 1.4, table.z - 2.6, 1.3, .9, .12); box(scene, '#f4f8fa', table.x - .4, 1.4, table.z - 2.55, 1, .6, .05, false); box(scene, '#6e5033', table.x - .4, .5, table.z - 2.6, .12, 1, .12);
 const cashGroup = new THREE.Group(); cashGroup.position.set(cashPoint.x, 0, cashPoint.z); scene.add(cashGroup);
@@ -144,7 +144,8 @@ function refreshWeapon() { const lvl = s.upgrades.weapon; if (lvl === shownWeapo
 const packMeat = meatInstanced(420, player); const packCash = instanced(unit, '#5fd45a', 64, player);
 const hpBar = new THREE.Group(); hpBar.position.y = 2.75; player.add(hpBar);
 const hpBack = box(hpBar, '#2a2a2a', 0, 0, 0, 1.2, .1, .1, false); const hpFill = box(hpBar, '#5fe05a', 0, .01, .02, 1.2, .12, .1, false);
-let attackVisual = 0, attackAim = 0, visualTime = 0;
+let attackVisual = 0, attackAim = 0, visualTime = 0, shake = 0, currentAction = null;
+const guideArrow = new THREE.Mesh(new THREE.ConeGeometry(.32, .8, 3), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .85, depthWrite: false })); guideArrow.rotation.x = Math.PI / 2; const guideGroup = new THREE.Group(); guideGroup.add(guideArrow); guideArrow.position.z = 1.9; guideArrow.position.y = .12; scene.add(guideGroup);
 const slashGroup = new THREE.Group(); scene.add(slashGroup);
 const slashMat = new THREE.MeshBasicMaterial({ color: '#ff4fd0', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
 const slashCore = new THREE.MeshBasicMaterial({ color: '#ffd0f4', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
@@ -205,6 +206,28 @@ const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: '#fffff
 
 // ---------- audio & UI helpers ----------
 function beep(f = 500, len = .1, type = 'sine', gain = .04) { if (!sound || !audio) return; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, audio.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(40, f * .6), audio.currentTime + len); g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + len + .02); }
+let noiseBuffer = null;
+function hiss(len, from, to, gain, q = 1) {
+  if (!sound || !audio) return;
+  if (!noiseBuffer) { noiseBuffer = audio.createBuffer(1, audio.sampleRate, audio.sampleRate); const d = noiseBuffer.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const src = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain(); src.buffer = noiseBuffer; f.type = 'bandpass'; f.Q.value = q;
+  f.frequency.setValueAtTime(from, audio.currentTime); f.frequency.exponentialRampToValueAtTime(to, audio.currentTime + len);
+  g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len);
+  src.connect(f); f.connect(g); g.connect(audio.destination); src.start(); src.stop(audio.currentTime + len + .02);
+}
+function tone(f, len, type = 'sine', gain = .05, delay = 0, slide = 1) { if (!sound || !audio) return; const t0 = audio.currentTime + delay; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * slide, t0 + len); g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + .012); g.gain.exponentialRampToValueAtTime(.001, t0 + len); o.connect(g); g.connect(audio.destination); o.start(t0); o.stop(t0 + len + .02); }
+const sfx = {
+  slash: () => hiss(.16, 1800, 350, .07, .8),
+  hit: () => { hiss(.08, 900, 300, .05, 1.5); tone(110, .12, 'sine', .05, 0, .6); },
+  kill: () => { hiss(.22, 700, 150, .08, 1.2); tone(80, .25, 'triangle', .07, 0, .5); },
+  pickup: () => tone(560, .06, 'sine', .035, 0, 1.35),
+  deposit: () => tone(420, .05, 'triangle', .03, 0, 1.2),
+  coin: () => { tone(1318, .07, 'sine', .045); tone(1760, .09, 'sine', .04, .06); },
+  pay: () => tone(990, .04, 'triangle', .025, 0, 1.1),
+  built: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .22, 'triangle', .05, i * .09)),
+  fanfare: () => [523, 659, 784, 1047, 1318].forEach((f, i) => tone(f, .35, 'triangle', .06, i * .12)),
+  hurt: () => tone(160, .14, 'square', .03, 0, .7),
+};
 function toast(t) { $('toast').textContent = t; $('toast').style.opacity = 1; toastUntil = performance.now() + 2400; }
 function save() { try { saveGame(localStorage, s); } catch { $('save-note').textContent = '瀏覽器不允許儲存，進度只保留於本次遊玩。'; } }
 function stop() { if (storyMode) { $('story').hidden = true; storyMode = null; } renderStages(); running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`; save(); }
@@ -311,7 +334,7 @@ addEventListener('resize', resize); resize();
 let lastCoins = s.coins;
 function updateHud() {
   $('coins').textContent = s.coins;
-  const action = nextAction(s); $('objective').querySelector('span').textContent = action.text;
+  const action = nextAction(s); currentAction = action; $('objective').querySelector('span').textContent = action.text;
   $('bag').querySelector('b').textContent = `${s.meat} / ${capacity(s)}`; $('bag').classList.toggle('full', s.meat >= capacity(s));
   $('stats').textContent = `${s.name} · 擊倒 ${s.kills} · 售出 ${s.sold} · ${weaponStats(s.upgrades.weapon).name}`;
   const autoCount = Object.values(automation(s)).filter(Boolean).length; $('auto-pill').hidden = autoCount === 0; $('auto-pill').classList.toggle('full', autoCount === 4); $('auto-pill').querySelector('span').textContent = autoCount === 4 ? '全自動運轉' : `自動化 ${autoCount}/4`;
@@ -328,7 +351,7 @@ function updateHud() {
     el.innerHTML = `${icon(p.icon, 'ic pad-icon')}${info.done ? `<b class="max">${icon('check')}MAX</b>` : info.locked ? `<b class="lock">${icon('lock')}${info.remaining}</b>` : `<b>${icon('bill')}${info.remaining}</b>`}<small>${p.name}</small>`;
   });
   if (nearPad) { const { p, info } = nearPad; $('objective').querySelector('span').textContent = info.done ? `${p.name}已升到最高` : info.locked ? `${p.name}・需先${p.requires}` : `${p.name} Lv.${level(s, p.id) + 1}・${p.detail}（還差 ${info.remaining} 元）`; }
-  tableLabel.el.innerHTML = `販售桌 · ${s.stock} 份<small>${s.stock ? '客人排隊購買中' : '把背上的肉堆到這裡'}</small>`;
+  tableLabel.el.innerHTML = `販售桌 · ${s.stock} / ${stockLimit(s)}<small>${s.stock >= stockLimit(s) ? '桌子滿了，等客人買走' : s.stock ? '客人排隊購買中' : '把背上的肉堆到這裡'}</small>`;
   cashLabel.el.innerHTML = s.cash ? `$ ${s.cash}<small>走過來收錢</small>` : `收款處<small>客人付的錢會放在這</small>`; cashLabel.el.hidden = s.cash === 0 && s.sold > 0;
   bubble.el.className = 'label bubble' + (s.stock ? '' : ' wait'); bubble.el.innerHTML = s.stock ? icon('meat', 'ic big') : '等肉…';
 }
@@ -345,22 +368,22 @@ function draw(t) {
       if (target && Math.hypot(x, z) < .1) { const goal = routeTarget(s, target, campOf(s)); const d = Math.hypot(goal.x - s.x, goal.z - s.z); if (Math.hypot(target.x - s.x, target.z - s.z) <= .3) target = null; else if (d > .05) { x = (goal.x - s.x) / d; z = (goal.z - s.z) / d; } }
       const events = step(s, 1 / 30, { x, z });
       for (const e of events) {
-        if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; beep(220, .12, 'sawtooth', .025); }
-        else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); const g = preyAt(e.x, e.z, e.id); if (g) { const u = g.userData; u.hit = .4; const fx = e.from?.x ?? s.x, fz = e.from?.z ?? s.z; const d = Math.hypot(e.x - fx, e.z - fz) || 1; u.hitDir = { x: (e.x - fx) / d, z: (e.z - fz) / d }; } }
-        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); beep(160, .15, 'square', .03); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
-        else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); beep(700 + Math.min(40, s.meat) * 12, .05); } }
-        else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) beep(520, .05); }
-        else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) beep(980, .06); }
-        else if (e.type === 'building') { syncBuildings(true); for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - .5) * 3, e.z + (Math.random() - .5) * 3, '#e8dcc8', .5, .6, 1.8); toast(`${e.name}蓋好了！`); beep(520, .2, 'triangle', .04); beep(780, .3, 'triangle', .04); }
-        else if (e.type === 'expand') { rebuildCamp(); const c = e.camp; for (let i = 0; i < 14; i++) spark(c.minX + Math.random() * (c.maxX - c.minX), c.minZ + Math.random() * (c.maxZ - c.minZ), '#ffffff', .6, .8, 1.2); toast('營地擴大了！新的土地圍好柵欄'); beep(330, .4, 'sine', .05); beep(660, .5, 'sine', .05); }
-        else if (e.type === 'automated') { burst(s.x, s.z, '#9ff39a'); toast('營地全自動運轉！助手、箭塔、收銀員、獵人都到齊了'); beep(660, .3); beep(990, .4); beep(1320, .5); }
+        if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; sfx.slash(); }
+        else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); if (!e.actor) sfx.hit(); const g = preyAt(e.x, e.z, e.id); if (g) { const u = g.userData; u.hit = .4; const fx = e.from?.x ?? s.x, fz = e.from?.z ?? s.z; const d = Math.hypot(e.x - fx, e.z - fz) || 1; u.hitDir = { x: (e.x - fx) / d, z: (e.z - fz) / d }; } }
+        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); sfx.kill(); shake = Math.max(shake, e.kind === 'giant' ? .6 : .14); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
+        else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); sfx.pickup(); } }
+        else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) sfx.deposit(); }
+        else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) sfx.coin(); }
+        else if (e.type === 'building') { syncBuildings(true); for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - .5) * 3, e.z + (Math.random() - .5) * 3, '#e8dcc8', .5, .6, 1.8); toast(`${e.name}蓋好了！`); sfx.built(); shake = Math.max(shake, .25); }
+        else if (e.type === 'expand') { rebuildCamp(); const c = e.camp; for (let i = 0; i < 14; i++) spark(c.minX + Math.random() * (c.maxX - c.minX), c.minZ + Math.random() * (c.maxZ - c.minZ), '#ffffff', .6, .8, 1.2); toast('營地擴大了！新的土地圍好柵欄'); sfx.fanfare(); shake = Math.max(shake, .35); }
+        else if (e.type === 'automated') { burst(s.x, s.z, '#9ff39a'); toast('營地全自動運轉！助手、箭塔、收銀員、獵人都到齊了'); sfx.fanfare(); }
         else if (e.type === 'arrow') { transfer('arrow', e.from, e.to, 5); }
-        else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); beep(1200, .04, 'triangle', .02); }
+        else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); sfx.pay(); }
         else if (e.type === 'sale') { transfer('meat', { x: table.x + .8, z: table.z }, e.customer, 3); transfer('bill', e.customer, cashPoint, 2.4); }
-        else if (e.type === 'built') { burst(e.x, e.z); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); beep(880, .3); beep(1320, .4); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
-        else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
+        else if (e.type === 'built') { burst(e.x, e.z); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
+        else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); sfx.hurt(); shake = Math.max(shake, .1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
-        else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); beep(880, .3); beep(1320, .5); save(); setTimeout(() => showStory('clear'), 900); }
+        else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); sfx.fanfare(); save(); setTimeout(() => showStory('clear'), 900); }
       }
       acc -= 1 / 30;
     }
@@ -388,9 +411,11 @@ function draw(t) {
   packCash.count = bills; packCash.instanceMatrix.needsUpdate = true;
   packMeat.rotation.z = packCash.rotation.z = Math.sin(visualTime * 7) * .02;
 
+  // guide arrow at the player's feet
+  if (currentAction && running) { const dx = currentAction.x - s.x, dz = currentAction.z - s.z, dd = Math.hypot(dx, dz); guideGroup.visible = dd > 3 && currentAction.id !== 'auto'; guideGroup.position.set(player.position.x, 0, player.position.z); guideGroup.rotation.y = Math.atan2(dx, dz); guideArrow.material.color.set(currentAction.id === 'cash' ? '#5fd45a' : currentAction.id === 'table' ? '#e5717e' : currentAction.id === 'pad' ? '#f0c75a' : '#ffffff'); guideArrow.position.z = 1.9 + Math.sin(visualTime * 6) * .15; } else guideGroup.visible = false;
   // camera and sun follow the player
   follow.lerp(new THREE.Vector3(s.x, 0, s.z), 1 - Math.exp(-dt * 4.5));
-  camera.position.copy(follow).add(cameraOffset); camera.lookAt(follow);
+  camera.position.copy(follow).add(cameraOffset); camera.lookAt(follow); if (shake > 0) { shake = Math.max(0, shake - dt * 1.8); camera.position.x += (Math.random() - .5) * shake * .9; camera.position.y += (Math.random() - .5) * shake * .6; }
   sun.position.set(follow.x - 18, 32, follow.z + 14); sun.target.position.copy(follow);
   snow.position.set(follow.x, 0, follow.z); const sp = snowGeo.attributes.position; for (let i = 0; i < snowCount; i++) { let y = sp.array[i * 3 + 1] - dt * 2.2; if (y < 0) y += 24; sp.array[i * 3 + 1] = y; sp.array[i * 3] += Math.sin(visualTime + i) * dt * .3; } sp.needsUpdate = true;
 
@@ -423,7 +448,7 @@ function draw(t) {
 
   // table stock and cash pile
   for (let i = 0; i < s.stock; i++) place(tableMeat, i, (i % 2 ? -.38 : .38), 1.2 + Math.floor(i / 10) * .22, -1.3 + Math.floor((i % 10) / 2) * .65, .7, .22, .6, (i % 3) * .06 + (i % 2 ? Math.PI : 0));
-  tableMeat.count = Math.min(config.stockLimit, s.stock); tableMeat.instanceMatrix.needsUpdate = true;
+  tableMeat.count = Math.min(config.stockLimit + 160, s.stock); tableMeat.instanceMatrix.needsUpdate = true;
   const billCount = Math.min(180, Math.ceil(s.cash / 5));
   for (let i = 0; i < billCount; i++) place(cashPile, i, -.55 + (i % 3) * .55, .22 + Math.floor(i / 6) * .075, (Math.floor(i / 3) % 2 ? .32 : -.32), .5, .07, .32, Math.sin(i * 2.1) * .12);
   cashPile.count = billCount; cashPile.instanceMatrix.needsUpdate = true;

@@ -18,6 +18,7 @@ export const config = {
 export const meatPrice = s => stageOf(s).meatPrice;
 export const preyOf = (s, b) => prey[kindOf(stageOf(s), b.id)];
 export const table = { x: 7.2, z: 3.6 };
+export const stockLimit = s => config.stockLimit + (s.buildings.includes('storage') ? 160 : 0);
 export const tableRange = 2.4;
 export const cashPoint = { x: 4.4, z: 5.2 };
 export const cashRange = 1.8;
@@ -152,9 +153,9 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
   });
 
   // Unloading at the sales table is fast: the whole stack slides over in a few seconds.
-  if (s.meat > 0 && distance(s, table) < tableRange && s.stock < config.stockLimit) {
+  if (s.meat > 0 && distance(s, table) < tableRange && s.stock < stockLimit(s)) {
     s.transfer -= dt;
-    while (s.transfer <= 0 && s.meat > 0 && s.stock < config.stockLimit) {
+    while (s.transfer <= 0 && s.meat > 0 && s.stock < stockLimit(s)) {
       s.meat--; s.stock++; s.transfer += .035;
       events.push({ type: 'deposit', from: { x: s.x, z: s.z }, to: { x: table.x, z: table.z } });
     }
@@ -186,7 +187,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
     }
   } else s.cashTimer = 0;
 
-  updateAssistant(s, dt, table, config.stockLimit, events);
+  updateAssistant(s, dt, table, stockLimit(s), events);
   updateHunters(s, dt, active, events, kill);
 
   // Ground pads drain cash gradually; the purchase lands when the price hits zero.
@@ -240,7 +241,7 @@ export function parseSave(text) {
   for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer', 'towerTimer']) if (!Number.isFinite(v[k])) throw Error(k);
   for (const k of ['hp', 'time']) if (!finite(v[k], 0)) throw Error(k);
   for (const k of ['coins', 'cash', 'earned', 'kills', 'sold', 'meat', 'stock']) if (!count(v[k])) throw Error(k);
-  if (v.meat > 400 || v.stock > config.stockLimit) throw Error('stacks');
+  if (v.meat > 400 || v.stock > config.stockLimit + 160) throw Error('stacks');
   for (const k of Object.keys(s.upgrades)) if (!count(v.upgrades?.[k], maxLevel(k))) throw Error('upgrade');
   for (const k of Object.keys(s.paid)) if (!count(v.paid?.[k])) throw Error('paid');
   if (typeof v.helper !== 'boolean') throw Error('helper');

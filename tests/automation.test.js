@@ -91,3 +91,11 @@ test('a helper stalled on the way home steps back to a gate and still delivers',
   for (let i = 0; i < 20 * 30; i++) { step(s, 1 / 30); if (i < 100) { s.assistant.x = -10; s.assistant.z = 3; } }
   assert.equal(s.assistant.load, 0); assert.equal(s.stock + s.sold, 15);
 });
+
+test('the meat storage building raises the table capacity', async () => {
+  const { stockLimit, config } = await import('../src/sim.js');
+  const s = fresh(); assert.equal(stockLimit(s), config.stockLimit); s.coins = 10 ** 5; buy(s, 'bag'); assert.equal(stockLimit(s), config.stockLimit + 160);
+  s.stock = config.stockLimit; s.meat = 5; s.x = table.x - 1; s.z = table.z; for (const c of s.customers.people) c.x = 90; for (let i = 0; i < 60; i++) step(s, 1 / 30);
+  assert.equal(s.meat, 0); assert.equal(s.stock, config.stockLimit + 5);
+  assert.equal(parseSave(serialize(s)).stock, config.stockLimit + 5);
+});
