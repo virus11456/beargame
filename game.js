@@ -4,6 +4,8 @@ import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, 
 import { padRadius, assistantCapacity } from './src/progression.js';
 import { nextAction, padLabel } from './src/guide.js';
 import { loadGame, saveGame, resetGame } from './src/storage.js';
+import { icon, installSprite, iconDataUrl } from './src/icons.js';
+installSprite(document);
 import { counter, customerCount } from './src/customers.js';
 
 const $ = id => document.getElementById(id);
@@ -98,9 +100,11 @@ const cashGroup = new THREE.Group(); cashGroup.position.set(cashPoint.x, 0, cash
 box(cashGroup, '#a9865c', 0, .08, 0, 1.9, .16, 1.5); const cashPile = instanced(unit, '#5fd45a', 180, cashGroup);
 flatRing(cashPoint.x, cashPoint.z, '#9ff39a', cashRange, .09, .7);
 const padViews = pads.map(p => {
-  const tile = rbox(scene, '#efe5d0', p.x, .04, p.z, 2.4, .08, 2.4, false); const inner = rbox(scene, '#f9f3e6', p.x, .06, p.z, 1.5, .08, 1.5, false);
+  const tile = rbox(scene, '#efe5d0', p.x, .04, p.z, 2.4, .08, 2.4, false); const inner = rbox(scene, '#e6d7b8', p.x, .06, p.z, 1.5, .08, 1.5, false);
   const ring = flatRing(p.x, p.z, '#ffffff', padRadius, .07, .8); const glow = flatRing(p.x, p.z, '#5fd45a', padRadius - .25, .22, 0);
-  return { pad: p, tile, inner, ring, glow };
+  const decal = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load(iconDataUrl(p.icon, '#8a6a4a')), transparent: true, depthWrite: false }));
+  decal.material.map.colorSpace = THREE.SRGBColorSpace; decal.rotation.x = -Math.PI / 2; decal.rotation.z = -Math.PI / 4; decal.position.set(p.x, .12, p.z); scene.add(decal);
+  return { pad: p, tile, inner, ring, glow, decal };
 });
 
 // ---------- labels (DOM, projected) ----------
@@ -158,7 +162,7 @@ const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: '#fffff
 function beep(f = 500, len = .1, type = 'sine', gain = .04) { if (!sound || !audio) return; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, audio.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(40, f * .6), audio.currentTime + len); g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + len + .02); }
 function toast(t) { $('toast').textContent = t; $('toast').style.opacity = 1; toastUntil = performance.now() + 2400; }
 function save() { try { saveGame(localStorage, s); } catch { $('save-note').textContent = '瀏覽器不允許儲存，進度只保留於本次遊玩。'; } }
-function stop() { running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = '繼續經營 <span>→</span>'; save(); }
+function stop() { running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`; save(); }
 $('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { } running = true; $('menu').hidden = true; };
 $('pause').onclick = stop;
 $('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; };
@@ -213,18 +217,18 @@ addEventListener('resize', resize); resize();
 let lastCoins = s.coins;
 function updateHud() {
   $('coins').textContent = s.coins;
-  const action = nextAction(s); $('objective').textContent = action.text;
+  const action = nextAction(s); $('objective').querySelector('span').textContent = action.text;
   $('bag').querySelector('b').textContent = `${s.meat} / ${capacity(s)}`; $('bag').classList.toggle('full', s.meat >= capacity(s));
   $('stats').textContent = `擊倒 ${s.kills} · 售出 ${s.sold} · ${weaponStats(s.upgrades.weapon).name}`;
   padViews.forEach(({ pad: p }, i) => {
     const info = padLabel(s, p), el = padLabels[i].el;
     const near = distance(s, p) < 3.4;
     el.className = 'label pad-label' + (info.done ? ' done' : info.locked ? ' locked' : s.coins >= info.remaining ? ' affordable' : '') + (near ? ' near' : '');
-    el.innerHTML = `<span class="icon">${p.icon}</span>${info.done ? p.name + ' MAX' : `<b>${info.remaining}</b>`}<small>${info.done ? '已升到最高' : info.locked ? p.name + '・需先' + p.requires : near ? `${p.name} Lv.${level(s, p.id) + 1}・${p.detail}` : p.name}</small>`;
+    el.innerHTML = `${icon(p.icon, 'ic pad-icon')}${info.done ? `<b class="max">${icon('check')}MAX</b>` : info.locked ? `<b class="lock">${icon('lock')}${info.remaining}</b>` : `<b>${icon('bill')}${info.remaining}</b>`}<small>${info.done ? p.name + '・已升到最高' : info.locked ? p.name + '・需先' + p.requires : near ? `${p.name} Lv.${level(s, p.id) + 1}・${p.detail}` : p.name}</small>`;
   });
   tableLabel.el.innerHTML = `販售桌 · ${s.stock} 份<small>${s.stock ? '客人排隊購買中' : '把背上的肉堆到這裡'}</small>`;
   cashLabel.el.innerHTML = s.cash ? `$ ${s.cash}<small>走過來收錢</small>` : `收款處<small>客人付的錢會放在這</small>`; cashLabel.el.hidden = s.cash === 0 && s.sold > 0;
-  bubble.el.className = 'label bubble' + (s.stock ? '' : ' wait'); bubble.el.textContent = s.stock ? '🥩' : '等肉…';
+  bubble.el.className = 'label bubble' + (s.stock ? '' : ' wait'); bubble.el.innerHTML = s.stock ? icon('meat', 'ic big') : '等肉…';
 }
 
 // ---------- main loop ----------
@@ -312,7 +316,7 @@ function draw(t) {
     const cost = price(s, p.id); const active = s.padLatch !== p.id && cost !== null && distance(s, p) < padRadius;
     const paid = cost ? s.paid[p.id] / cost : 0;
     glow.material.opacity = active ? .5 + Math.sin(visualTime * 8) * .2 : paid > 0 ? .35 : 0; glow.scale.setScalar(.4 + paid * .6 + (active ? .05 : 0));
-    ring.material.color.set(cost === null ? '#9fc4d0' : s.coins >= cost - s.paid[p.id] ? '#9ff39a' : '#ffffff'); inner.material = material(cost === null ? '#d8e6ea' : '#f9f3e6');
+    ring.material.color.set(cost === null ? '#9fc4d0' : s.coins >= cost - s.paid[p.id] ? '#9ff39a' : '#ffffff'); inner.material = material(cost === null ? '#cfdfe4' : '#e6d7b8');
   });
 
   // customers & helper
@@ -341,7 +345,7 @@ function draw(t) {
   renderer.render(scene, camera);
 }
 if (loaded.notice) $('save-note').textContent = loaded.notice;
-if (s.time > 0) $('start').innerHTML = '繼續經營 <span>→</span>';
+if (s.time > 0) $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`;
 buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle);
 if (location.search.includes('debug')) window.__polar = { state: () => s, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
 updateHud(); requestAnimationFrame(draw);
