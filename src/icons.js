@@ -18,6 +18,7 @@ export const icons = {
   hunter: `<rect x="5" y="12" width="14" height="10.5" rx="4.5" fill="#8a5a3a"/><circle cx="12" cy="7.2" r="3.8" fill="#f1c9a3"/><path d="M7.6 7.2a4.4 4.4 0 0 1 8.8 0z" fill="#5c3b25"/><path d="M17 21.5V4" stroke="#6b4b32" stroke-width="1.6" stroke-linecap="round"/><path d="M17 1.5l2 3.5h-4z" fill="#dfe8ec"/><rect x="7.5" y="11" width="9" height="2.2" rx="1.1" fill="#e9dcc3"/>`,
   auto: `<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M19 3.5l2 2M5 3.5l-2 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`,
   navigate: `<path d="M12 3l7 17-7-4-7 4z" fill="currentColor"/>`,
+  star: `<path d="M12 2.6l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.5l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" fill="currentColor"/>`,
 };
 export const icon = (name, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 export function installSprite(doc) {

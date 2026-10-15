@@ -26,6 +26,14 @@ export const canHire = s => s.sold >= 30;
 export const unlocked = (s, key) => key === 'helper' ? canHire(s) : key === 'cashier' ? s.sold >= 60 : key === 'hunter' ? s.upgrades.tower > 0 : true;
 export const automation = s => ({ helper: s.helper, tower: s.upgrades.tower > 0, cashier: s.cashier, hunter: s.upgrades.hunter > 0 });
 export const fullyAutomated = s => Object.values(automation(s)).every(Boolean);
+// Stage stars, earned in order: the income goal, twice the goal, then a
+// fully automated camp. The endless stage uses fixed income marks instead.
+export const starGoals = stage => stage.goal === null ? [20000, 40000] : [stage.goal, stage.goal * 2];
+export const starLabels = stage => { const [a, b] = starGoals(stage); return [`收入 ${a} 元`, `收入 ${b} 元`, '營地全自動運轉']; };
+export function starsOf(s, stage = stageOf(s)) {
+  const [a, b] = starGoals(stage);
+  return s.earned < a ? 0 : s.earned < b ? 1 : fullyAutomated(s) ? 3 : 2;
+}
 // Buildings rise in the camp the first time each of these is bought; each
 // new building also opens more fenced ground (see expandedCamp).
 export const buildingOf = { weapon: 'forge', bag: 'storage', speed: 'sled', helper: 'hut', cashier: 'booth', hunter: 'lodge' };

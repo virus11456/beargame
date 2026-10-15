@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, meatGeometry, meatMaterial, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
-import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf, stockLimit } from './src/sim.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf, stockLimit, starsOf, starGoals, starLabels } from './src/sim.js';
 import { gatesOf, maxCamp, buildingSlots } from './src/camp.js';
 import { themes } from './src/stages.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
@@ -150,6 +150,19 @@ const hpBar = new THREE.Group(); hpBar.position.y = 2.75; player.add(hpBar);
 const hpBack = box(hpBar, '#2a2a2a', 0, 0, 0, 1.2, .1, .1, false); const hpFill = box(hpBar, '#5fe05a', 0, .01, .02, 1.2, .12, .1, false);
 let attackVisual = 0, attackAim = 0, visualTime = 0, shake = 0, currentAction = null;
 const guideArrow = new THREE.Mesh(new THREE.ConeGeometry(.32, .8, 3), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .85, depthWrite: false })); guideArrow.rotation.x = Math.PI / 2; const guideGroup = new THREE.Group(); guideGroup.add(guideArrow); guideArrow.position.z = 1.9; guideArrow.position.y = .12; scene.add(guideGroup);
+const starRow = (n, cls = '') => `<i class="stars ${cls}">${[0, 1, 2].map(i => icon('star', 'ic star' + (i < n ? ' on' : ''))).join('')}</i>`;
+const stageStars = id => id === s.stage ? Math.max(s.stars, starsOf(s)) : s.records[id]?.stars || 0;
+// Coaching ring: a pulsing gold halo on the first loot / table / cash pile / affordable pad.
+const coach = { ring: flatRing(0, 0, '#f0b23a', 1.7, .22, .9), id: null, until: 0 }; coach.ring.visible = false;
+const coachText = { loot: '獵物掉肉了！走過去就會自動撿起', table: '肉背在身上了，走到販售桌旁會自動堆上桌', cash: '客人付錢了！走到桌邊的錢堆上就能收進錢包', pad: '錢夠了！站到發亮的地面標記上，錢會一張張付掉升級' };
+function showCoach(id) { coach.id = id; coach.until = visualTime + 14; coach.ring.visible = true; toast(coachText[id]); }
+function coachTarget() {
+  if (coach.id === 'loot') return s.drops.slice().sort((a, b) => distance(s, a) - distance(s, b))[0] || null;
+  if (coach.id === 'table') return table; if (coach.id === 'cash') return cashPoint;
+  if (coach.id === 'pad') { if (currentAction?.id === 'pad') return currentAction; const p = pads.filter(p => price(s, p.id) !== null && s.coins >= price(s, p.id) - s.paid[p.id]).sort((a, b) => price(s, a.id) - price(s, b.id))[0]; return p || null; }
+  return null;
+}
+function endCoach(id) { if (coach.id === id) { coach.id = null; coach.ring.visible = false; } }
 const slashGroup = new THREE.Group(); scene.add(slashGroup);
 const slashMat = new THREE.MeshBasicMaterial({ color: '#ff4fd0', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
 const slashCore = new THREE.MeshBasicMaterial({ color: '#ffd0f4', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
@@ -264,6 +277,7 @@ const sfx = {
   pay: () => tone(990, .04, 'triangle', .025, 0, 1.1),
   built: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .22, 'triangle', .05, i * .09)),
   fanfare: () => [523, 659, 784, 1047, 1318].forEach((f, i) => tone(f, .35, 'triangle', .06, i * .12)),
+  star: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, .28, 'triangle', .05, i * .09)),
   hurt: () => tone(160, .14, 'square', .03, 0, .7),
 };
 function toast(t) { $('toast').textContent = t; $('toast').style.opacity = 1; toastUntil = performance.now() + 2400; }
@@ -290,7 +304,8 @@ function showStory(kind) {
   const st = stageOf(s), story = storyOf(s); storyMode = kind; running = false; keys = {}; clearJoy(); target = null;
   $('story-chapter').textContent = `第 ${st.id + 1} 章 · ${st.subtitle}`; $('story-title').textContent = st.name; $('story-speaker').textContent = story.speaker;
   $('story-text').textContent = kind === 'intro' ? story.intro.join('\n') : story.cleared;
-  $('story-goal').innerHTML = kind === 'intro' ? `${icon('navigate')}${st.goal === null ? story.goal : `${story.goal}：收入 ${st.goal} 元`}` : `${icon('check')}本關收入 ${s.earned} 元・擊倒 ${s.kills}`;
+  const stars = stageStars(st.id), labels = starLabels(st);
+  $('story-goal').innerHTML = kind === 'intro' ? `${icon('navigate')}${st.goal === null ? story.goal : `${story.goal}：收入 ${st.goal} 元`}<small>三顆星：${labels.join('・')}</small>` : `${icon('check')}本關收入 ${s.earned} 元・擊倒 ${s.kills}${starRow(stars)}${stars < 3 ? `<small>下一顆星：${labels[stars]}</small>` : '<small>三星達成！</small>'}`;
   $('story-go').innerHTML = kind === 'intro' ? `出發 ${icon('arrow')}` : `繼續賺錢 ${icon('arrow')}`;
   $('story-next').hidden = !(kind === 'clear' && hasNext(s));
   $('story').hidden = false;
@@ -301,13 +316,13 @@ $('story-next').onclick = () => { $('story').hidden = true; storyMode = null; $(
 $('next-stage').onclick = () => { if (!stageCleared(s) || !hasNext(s)) return; const n = nextStage(s); switchState(n, `第 ${n.stage + 1} 關「${stageOf(n).name}」開始！`); };
 function renderStages() {
   $('name').value = s.name;
-  const best = Object.entries(s.records).map(([k, r]) => `<span>第 ${+k + 1} 關 擊倒 ${r.kills}・收入 ${r.earned}</span>`).join('');
+  const best = Object.entries(s.records).map(([k, r]) => `<span>第 ${+k + 1} 關${starRow(stageStars(+k))}擊倒 ${r.kills}・收入 ${r.earned}</span>`).join('');
   $('records').innerHTML = `<div>本關擊倒<b>${s.kills}</b></div><div>生涯擊倒<b>${s.totalKills + s.kills}</b></div><div>生涯收入<b>${s.lifetime + s.earned}</b></div>${best ? `<div class="best">${best}</div>` : ''}`;
   const root = $('stages'); root.replaceChildren();
   for (const st of stages) {
     const b = document.createElement('button'); const locked = st.id > s.unlocked;
     b.className = 'stage' + (st.id === s.stage ? ' current' : '') + (locked ? ' locked' : ''); b.disabled = locked;
-    b.innerHTML = `<b>${st.id + 1}</b><span>${st.name}<small>${locked ? '尚未解鎖' : st.subtitle}</small></span>`;
+    b.innerHTML = `<b>${st.id + 1}</b><span>${st.name}<small>${locked ? '尚未解鎖' : st.subtitle}</small></span>${locked ? '' : starRow(stageStars(st.id), 'end')}`;
     b.onclick = () => { if (st.id === s.stage) { $('start').onclick(); return; } if (!confirm(`前往「${st.name}」會開一座新營地，目前這關的進度會重來。確定嗎？`)) return; switchState(startStage(s, st.id), `第 ${st.id + 1} 關「${st.name}」開始！`); };
     root.append(b);
   }
@@ -377,7 +392,7 @@ function updateHud() {
   $('stats').textContent = `${s.name} · 擊倒 ${s.kills} · 售出 ${s.sold} · ${weaponStats(s.upgrades.weapon).name}`;
   const autoCount = Object.values(automation(s)).filter(Boolean).length; $('auto-pill').hidden = autoCount === 0; $('auto-pill').classList.toggle('full', autoCount === 4); $('auto-pill').querySelector('span').textContent = autoCount === 4 ? '全自動運轉' : `自動化 ${autoCount}/4`;
   const st = stageOf(s); const goal = st.goal; const cleared = stageCleared(s);
-  $('stage-name').textContent = `第 ${st.id + 1} 關 ${st.name}`;
+  $('stage-name').innerHTML = `第 ${st.id + 1} 關 ${st.name}${starRow(stageStars(st.id))}`;
   $('stage-goal').textContent = goal === null ? `${storyOf(s).goal} · ${s.earned}` : cleared ? `達成 ${s.earned} / ${goal}` : `${storyOf(s).goal} ${s.earned} / ${goal}`;
   $('stage-bar').style.width = (goal === null ? 100 : Math.min(100, s.earned / goal * 100)) + '%';
   $('stage').classList.toggle('cleared', cleared); $('next-stage').hidden = !(cleared && hasNext(s));
@@ -409,14 +424,16 @@ function draw(t) {
         if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; sfx.slash(); }
         else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); if (!e.actor) sfx.hit(); const g = preyAt(e.x, e.z, e.id); if (g) { const u = g.userData; u.hit = .4; const fx = e.from?.x ?? s.x, fz = e.from?.z ?? s.z; const d = Math.hypot(e.x - fx, e.z - fz) || 1; u.hitDir = { x: (e.x - fx) / d, z: (e.z - fz) / d }; } }
         else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); sfx.kill(); shake = Math.max(shake, e.kind === 'giant' ? .6 : .14); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
-        else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); sfx.pickup(); } }
-        else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) sfx.deposit(); }
-        else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) sfx.coin(); }
+        else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); sfx.pickup(); endCoach('loot'); } }
+        else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) { sfx.deposit(); endCoach('table'); } }
+        else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) { sfx.coin(); endCoach('cash'); } }
         else if (e.type === 'building') { syncBuildings(true); for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - .5) * 3, e.z + (Math.random() - .5) * 3, '#e8dcc8', .5, .6, 1.8); toast(`${e.name}蓋好了！`); sfx.built(); shake = Math.max(shake, .25); }
         else if (e.type === 'expand') { rebuildCamp(); const c = e.camp; for (let i = 0; i < 14; i++) spark(c.minX + Math.random() * (c.maxX - c.minX), c.minZ + Math.random() * (c.maxZ - c.minZ), '#ffffff', .6, .8, 1.2); toast('營地擴大了！新的土地圍好柵欄'); sfx.fanfare(); shake = Math.max(shake, .35); }
         else if (e.type === 'automated') { burst(s.x, s.z, '#9ff39a'); toast('營地全自動運轉！助手、箭塔、收銀員、獵人都到齊了'); sfx.fanfare(); }
         else if (e.type === 'arrow') { transfer('arrow', e.from, e.to, 5); }
-        else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); sfx.pay(); }
+        else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); sfx.pay(); endCoach('pad'); }
+        else if (e.type === 'tip') showCoach(e.id);
+        else if (e.type === 'star') { burst(s.x, s.z, '#f0b23a'); for (let i = 0; i < 8; i++) spark(s.x + Math.cos(i * .8) * 1.1, s.z + Math.sin(i * .8) * 1.1, '#ffd54a', .32, .6, 3); sfx.star(); if (e.stars > 1 || !stageCleared(s) || s.earned > stageOf(s).goal) toast(`第 ${e.stars} 顆星！${e.label}`); save(); }
         else if (e.type === 'sale') { transfer('meat', { x: table.x + .8, z: table.z }, e.customer, 3); transfer('bill', e.customer, cashPoint, 2.4); }
         else if (e.type === 'built') { burst(e.x, e.z); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
         else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); sfx.hurt(); shake = Math.max(shake, .1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }

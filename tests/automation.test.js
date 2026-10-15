@@ -43,7 +43,7 @@ test('automation unlocks in order and the camp reports when it runs itself', () 
 test('name and records persist and carry across stages', () => {
   const s = fresh(); s.name = '阿北'; s.kills = 40; s.earned = 1300; s.unlocked = 1; s.totalKills = 5;
   const r = parseSave(serialize(s)); assert.equal(r.name, '阿北'); assert.equal(r.totalKills, 5);
-  const n = startStage(s, 1); assert.equal(n.name, '阿北'); assert.equal(n.totalKills, 45); assert.deepEqual(n.records[0], { kills: 40, earned: 1300 });
+  const n = startStage(s, 1); assert.equal(n.name, '阿北'); assert.equal(n.totalKills, 45); assert.deepEqual(n.records[0], { kills: 40, earned: 1300, stars: 1 });
   const bad = serialize({ ...s, name: 'x'.repeat(40) }); assert.equal(restore(bad).name, '獵人');
 });
 

@@ -3,10 +3,10 @@
 // meat → drop it on the sales table → customers pay cash at the table →
 // collect the cash → stand on ground pads to buy upgrades and expand.
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
-import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter, campOf, buildingOf, buildingNames } from './progression.js';
+import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, starsOf, starGoals, starLabels, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter, campOf, buildingOf, buildingNames } from './progression.js';
 import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside, pushOut, buildingSlots, expandedCamp } from './camp.js';
 import { stages, stories, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
-export { price, level, canHire, unlocked, automation, fullyAutomated, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, campOf, buildingOf, buildingNames, buildingSlots, expandedCamp, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
+export { price, level, canHire, unlocked, automation, fullyAutomated, starsOf, starGoals, starLabels, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, campOf, buildingOf, buildingNames, buildingSlots, expandedCamp, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
 
 export const config = {
   speed: 6.2, capacityPerLevel: 20,
@@ -43,7 +43,7 @@ function bear(i, stage = stages[0]) {
 export function fresh(stage = 0, unlocked = 0) {
   const def = stages[Math.max(0, Math.min(stages.length - 1, stage))];
   return {
-    version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {}, storySeen: false,
+    version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {}, storySeen: false, stars: 0, tips: { loot: false, table: false, cash: false, pad: false },
     x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
     meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0 }, helper: false, cashier: false, hunters: [], buildings: [],
     paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0, tower: 0, cashier: 0, hunter: 0 }, padLatch: null,
@@ -59,7 +59,9 @@ export function startStage(s, stage) {
   if (index > s.unlocked) return s;
   const next = fresh(index, s.unlocked);
   next.lifetime = s.lifetime + s.earned; next.name = s.name; next.totalKills = s.totalKills + s.kills;
-  next.records = { ...s.records, [s.stage]: { kills: Math.max(s.kills, s.records[s.stage]?.kills || 0), earned: Math.max(s.earned, s.records[s.stage]?.earned || 0) } };
+  const old = s.records[s.stage] || {};
+  next.records = { ...s.records, [s.stage]: { kills: Math.max(s.kills, old.kills || 0), earned: Math.max(s.earned, old.earned || 0), stars: Math.max(s.stars, starsOf(s), old.stars || 0) } };
+  next.tips = { ...s.tips };
   return next;
 }
 export const nextStage = s => stageCleared(s) && hasNext(s) ? startStage({ ...s, unlocked: Math.max(s.unlocked, s.stage + 1) }, s.stage + 1) : s;
@@ -143,6 +145,10 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
   }
   if (s.hp <= 0) { s.x = 0; s.z = 2; s.hp = 100; events.push({ type: 'rescue' }); }
 
+  // One-time coaching: the first loot, first carried meat, first cash and the
+  // first affordable pad each fire a tip the renderer highlights.
+  const tip = (id, ok) => { if (!s.tips[id] && ok) { s.tips[id] = true; events.push({ type: 'tip', id }); } };
+  tip('loot', s.drops.length > 0);
   // Meat on the ground is collected automatically while there is room on the back.
   let picked = 0;
   s.drops = s.drops.filter(d => {
@@ -209,6 +215,11 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
       }
     }
   }
+  // Stage stars never drop within a stage; each new one is announced once.
+  const stars = starsOf(s);
+  if (stars > s.stars) { s.stars = stars; events.push({ type: 'star', stars, label: starLabels(stageOf(s))[stars - 1] }); }
+  tip('table', s.meat > 0); tip('cash', s.cash > 0);
+  tip('pad', pads.some(p => { const c = price(s, p.id); return c !== null && unlocked(s, p.id) && s.coins >= c - s.paid[p.id]; }));
   return events;
 }
 
@@ -232,10 +243,10 @@ export function parseSave(text) {
   if (v.version !== 7) throw Error('version');
   if (!count(v.stage, stages.length - 1) || !count(v.unlocked, stages.length - 1) || typeof v.cleared !== 'boolean' || !count(v.lifetime)) throw Error('stage');
   const stage = stages[v.stage];
-  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false;
+  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false; v.stars ??= 0; v.tips = { ...s.tips, ...(v.tips || {}) };
   if (!Array.isArray(v.buildings)) { v.buildings = []; for (const [k, b] of Object.entries(buildingOf)) if ((k === 'helper' ? v.helper : k === 'cashier' ? v.cashier : v.upgrades[k] > 0) && v.buildings.length < buildingSlots.length) v.buildings.push(b); }
   if (v.buildings.length > buildingSlots.length || new Set(v.buildings).size !== v.buildings.length || v.buildings.some(b => !buildingNames[b])) throw Error('buildings');
-  if (typeof v.storySeen !== 'boolean') throw Error('story');
+  if (typeof v.storySeen !== 'boolean' || !count(v.stars, 3) || Object.keys(s.tips).some(k => typeof v.tips[k] !== 'boolean')) throw Error('story');
   if (typeof v.name !== 'string' || v.name.length > 16 || typeof v.cashier !== 'boolean' || !count(v.totalKills) || typeof v.records !== 'object' || v.records === null) throw Error('profile');
   if (!Array.isArray(v.hunters) || v.hunters.length > 3 || v.hunters.some(h => !Number.isFinite(h.x) || !Number.isFinite(h.z) || !finite(h.cool, 0))) throw Error('hunters');
   for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer', 'towerTimer']) if (!Number.isFinite(v[k])) throw Error(k);
@@ -256,7 +267,8 @@ export function parseSave(text) {
   s.drops = v.drops.map(d => ({ x: d.x, z: d.z }));
   s.padLatch = null; s.payTimer = 0; s.hp = Math.min(100, s.hp); s.unlocked = Math.max(s.unlocked, s.stage); s.cleared = stageCleared(s);
   s.hunters = s.hunters.slice(0, s.upgrades.hunter).map(h => ({ x: h.x, z: h.z, cool: h.cool })); while (s.hunters.length < s.upgrades.hunter) s.hunters.push(newHunter(s.hunters.length));
-  s.records = Object.fromEntries(Object.entries(s.records).filter(([k, r]) => count(+k, stages.length - 1) && r && count(r.kills) && count(r.earned)).map(([k, r]) => [k, { kills: r.kills, earned: r.earned }]));
+  s.records = Object.fromEntries(Object.entries(s.records).filter(([k, r]) => count(+k, stages.length - 1) && r && count(r.kills) && count(r.earned)).map(([k, r]) => [k, { kills: r.kills, earned: r.earned, stars: count(r.stars, 3) ? r.stars : 0 }]));
+  s.tips = Object.fromEntries(Object.keys(fresh().tips).map(k => [k, v.tips[k] === true])); s.stars = Math.max(s.stars, starsOf(s));
   const b = worldBounds(s);
   s.x = Math.max(b.minX, Math.min(b.maxX, s.x)); s.z = Math.max(b.minZ, Math.min(b.maxZ, s.z));
   for (const key of Object.keys(s.paid)) { const cost = price(s, key); if (cost === null) s.paid[key] = 0; else s.paid[key] = Math.min(s.paid[key], cost - 1); }
