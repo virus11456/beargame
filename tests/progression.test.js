@@ -19,8 +19,8 @@ test('assistant travels, collects and deposits without losing meat',()=>{
  const s=fresh();s.helper=true;s.x=13;s.z=8;
  s.drops=Array.from({length:12},()=>({x:-12,z:-8,type:'raw'}));
  run(s,1);assert.ok(s.assistant.z<6);assert.equal(s.sold,0);
- run(s,60);assert.equal(s.sold,12);assert.equal(s.assistant.load,0);assert.equal(s.drops.length,0);
- assert.equal(s.queues.cut.length+s.queues.grill.length+s.queues.sell.length+s.outputs.cut+s.outputs.grill,0);
+ run(s,60);assert.equal(s.sold,0);assert.equal(s.outputs.grill,12);assert.equal(s.assistant.load,0);assert.equal(s.drops.length,0);
+ assert.equal(s.queues.cut.length+s.queues.grill.length+s.queues.sell.length+s.outputs.cut+s.outputs.grill,12);
 });
 test('assistant waits with its cargo at a full receiving queue',()=>{
  const s=fresh();s.helper=true;Object.assign(s.assistant,{x:-6,z:4.7,load:12,phase:'return'});

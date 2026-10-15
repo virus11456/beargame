@@ -27,16 +27,18 @@ export function step(s,dt,input={x:0,z:0}){
  if(s.hp<=0){s.x=0;s.z=7;s.hp=100;events.push({type:'rescue'});}
  s.drops=s.drops.filter(d=>{if(distance(s,d)<config.pickup&&s.bag.length<capacity(s)){s.bag.push(d.type);events.push({type:'pickup',resource:d.type,from:{x:d.x,z:d.z},to:{x:s.x,z:s.z}});return false;}return true;});
  moveCustomers(s.customers,dt);
+ for(const c of s.customers.people){if(c.paymentDue>0&&(c.departureDelay??0)===0){const value=c.paymentDue;c.paymentDue=0;s.pendingCash+=value;s.earned+=value;s.sold++;events.push({type:'sale',value,customerId:c.id,customer:{x:c.x,z:c.z},x:6,z:3});}}
  const speed=(1+s.upgrades.speed*.3)*(s.helper?1.5:1);
  for(const st of stations){const q=s.queues[st.id];const nearby=distance(s,{x:st.x,z:st.z+1.7})<config.stationRange;
  if(nearby&&s.transfer<=0){const idx=s.bag.indexOf(st.input);if(idx>=0&&q.length<config.queueLimit){q.push(s.bag.splice(idx,1)[0]);s.transfer=.06;events.push({type:'deposit',resource:st.input,from:{x:s.x,z:s.z},to:{x:st.x,z:st.z}});}}
- if(q.length&&(st.id!=='sell'||readyCustomer(s.customers))&&(!st.output||s.outputs[st.id]<config.stockLimit)){s.timers[st.id]+=dt*(st.id==='sell'?1:speed)*(st.id==='grill'&&s.expanded?2:1);if(s.timers[st.id]>=st.seconds){s.timers[st.id]-=st.seconds;q.shift();if(st.id==='sell'){const customer=takeMeal(s.customers);const value=config.sale+(s.expanded?4:0);s.pendingCash+=value;s.earned+=value;s.sold++;events.push({type:'sale',value,customerId:customer.id,customer:{x:customer.x,z:customer.z},x:st.x,z:st.z});}else s.outputs[st.id]++;}}else s.timers[st.id]=0;
+ if(st.id==='grill'&&nearby&&s.transfer<=0&&s.outputs.grill>0&&s.bag.length<capacity(s)){s.outputs.grill--;s.bag.push('meal');s.transfer=.06;events.push({type:'pickup',resource:'meal',from:{x:st.x,z:st.z},to:{x:s.x,z:s.z}});}
+ if(q.length&&(st.id!=='sell'||readyCustomer(s.customers))&&(!st.output||s.outputs[st.id]<config.stockLimit)){s.timers[st.id]+=dt*(st.id==='sell'?1:speed)*(st.id==='grill'&&s.expanded?2:1);if(s.timers[st.id]>=st.seconds){s.timers[st.id]-=st.seconds;q.shift();if(st.id==='sell'){const value=config.sale+(s.expanded?4:0);const customer=takeMeal(s.customers,value);events.push({type:'handoff',value,customerId:customer.id,customer:{x:customer.x,z:customer.z},x:st.x,z:st.z});}else s.outputs[st.id]++;}}else s.timers[st.id]=0;
  }
- // A basic conveyor is available from the start. The helper accelerates it.
+ // Only cut meat moves automatically; cooked meals must be carried by the player.
  s.helperTimer+=dt;
  if(s.helperTimer>=(s.helper?.18:.5)){
   s.helperTimer=0;
-  for(const [source,destination] of [[stations[0],stations[1]],[stations[1],stations[2]]]){
+  for(const [source,destination] of [[stations[0],stations[1]]]){
    if(s.outputs[source.id]>0&&s.queues[destination.id].length<config.queueLimit){
     s.outputs[source.id]--;s.queues[destination.id].push(source.output);
     events.push({type:'deposit',resource:source.output,from:{x:source.x,z:source.z},to:{x:destination.x,z:destination.z}});
