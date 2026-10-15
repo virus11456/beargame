@@ -202,7 +202,10 @@ function restart() {
 }
 $('reset').onclick = restart; $('restart').onclick = restart;
 $('name').onchange = () => { const v = $('name').value.trim().slice(0, 12); s.name = v || '獵人'; $('name').value = s.name; save(); updateHud(); };
-$('name').onkeydown = e => e.stopPropagation();
+$('name').onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') $('name').blur(); };
+// iOS zooms the page when a text field gains focus; snap the viewport back on blur.
+function resetZoom() { const meta = document.querySelector('meta[name=viewport]'); const base = meta.content; meta.content = base.replace('maximum-scale=1', 'maximum-scale=1.0001'); requestAnimationFrame(() => { meta.content = base; window.scrollTo(0, 0); }); }
+$('name').addEventListener('blur', resetZoom); $('name').addEventListener('change', resetZoom);
 $('objective').onclick = () => { if (!running) return; const a = nextAction(s); target = { x: a.x, z: a.z }; };
 let storyMode = null;
 function showStory(kind) {
