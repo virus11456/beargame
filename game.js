@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createHuman, animateHuman, createBear, createTree, part, material, rounded, unit, smooth } from './src/art.js';
-import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget } from './src/sim.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage } from './src/sim.js';
+import { themes } from './src/stages.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
 import { nextAction, padLabel } from './src/guide.js';
 import { loadGame, saveGame, resetGame } from './src/storage.js';
@@ -23,7 +24,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, maxRatio)); renderer.shadowMap
 renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08;
 const camera = new THREE.OrthographicCamera(-18, 18, 18, -18, .1, 160);
 const follow = new THREE.Vector3(s.x, 0, s.z), cameraOffset = new THREE.Vector3(26, 34, 26);
-scene.add(new THREE.HemisphereLight(0xf6fbff, 0x9fb4b9, 1.6));
+const hemi = new THREE.HemisphereLight(0xf6fbff, 0x9fb4b9, 1.6); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1dc, 2); sun.castShadow = true; sun.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 }); sun.shadow.normalBias = .05; sun.shadow.bias = -.0002;
 scene.add(sun, sun.target);
@@ -45,10 +46,10 @@ function instanced(geometry, color, count, parent = scene) {
 function place(mesh, i, x, y, z, w, h, d, ry = 0) { dummy.position.set(x, y, z); dummy.rotation.set(0, ry, 0); dummy.scale.set(w, h, d); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); }
 
 // ---------- terrain ----------
-box(scene, '#eef3f5', 0, -.5, -12, 220, 1, 220);
+const groundMesh = box(scene, '#eef3f5', 0, -.5, -12, 220, 1, 220); groundMesh.material = new THREE.MeshStandardMaterial({ color: '#eef3f5', roughness: .9 });
 const floorW = camp.maxX - camp.minX + .4, floorD = camp.maxZ - camp.minZ + .4, floorZ = (camp.minZ + camp.maxZ) / 2;
-box(scene, '#c9996a', 0, .02, floorZ, floorW, .1, floorD);
-box(scene, '#d4a878', 0, .035, floorZ, floorW - 1.2, .1, floorD - 1.2, false);
+const floorMesh = box(scene, '#c9996a', 0, .02, floorZ, floorW, .1, floorD); floorMesh.material = new THREE.MeshStandardMaterial({ color: '#c9996a', roughness: .9 });
+const floorLightMesh = box(scene, '#d4a878', 0, .035, floorZ, floorW - 1.2, .1, floorD - 1.2, false); floorLightMesh.material = new THREE.MeshStandardMaterial({ color: '#d4a878', roughness: .9 });
 for (let i = 0; i < 26; i++) ball(scene, i % 2 ? '#cfa072' : '#dbb286', camp.minX + 1 + noise(i) * (floorW - 2.4), .07, camp.minZ + 1 + noise(i + 40) * (floorD - 2.4), .6 + noise(i + 9) * .75, .04, .4 + noise(i + 3) * .5);
 // Snow path for the customer line.
 box(scene, '#dbe8f1', counter.x + 7.5, .015, counter.z, 19, .08, 2.8, false);
@@ -134,7 +135,24 @@ function buildSlash(range, angle) {
   slashInner = new THREE.Mesh(new THREE.RingGeometry(range * .55, range * .8, 28, 1, -angle / 2.6, angle / 1.3), slashCore); slashInner.rotation.x = -Math.PI / 2; slashInner.position.y = .95;
   slashGroup.add(slashMesh, slashInner);
 }
-const bearViews = s.bears.map(() => { const g = createBear(); scene.add(g); g.userData.hp = config.bearHp; return g; });
+let bearViews = [];
+function buildBears() {
+  for (const g of bearViews) scene.remove(g);
+  const stage = stageOf(s);
+  bearViews = s.bears.map((b, i) => { const g = createBear(kindOf(stage, i)); scene.add(g); g.userData.hp = b.hp; return g; });
+}
+function applyTheme() {
+  const th = themes[stageOf(s).theme] || themes.snow;
+  scene.background.set(th.sky); scene.fog.color.set(th.sky); renderer.setClearColor(th.sky);
+  hemi.color.set(th.hemi); hemi.groundColor.set(th.hemiGround); sun.color.set(th.sun); sun.intensity = th.sunStrength;
+  groundMesh.material.color.set(th.ground); floorMesh.material.color.set(th.floor); floorLightMesh.material.color.set(th.floorLight);
+}
+function switchState(next, message) {
+  s = next; target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
+  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
+  buildBears(); applyTheme(); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message);
+}
+buildBears();
 const customers = Array.from({ length: customerCount }, (_, i) => { const g = createHuman(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'); g.scale.setScalar(.92); g.userData.meat = rbox(g, '#e0737e', 0, 1.05, .55, .6, .25, .5); g.userData.meat.visible = false; scene.add(g); return g; });
 const helper = createHuman('#5f8a6e', '#efe6d6'); scene.add(helper); helper.visible = s.helper;
 const helperLoad = Array.from({ length: assistantCapacity }, (_, i) => rbox(helper, '#e0737e', i % 2 ? -.2 : .2, 1.05 + Math.floor(i / 2) * .19, -.62, .42, .17, .5));
@@ -169,13 +187,22 @@ $('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：
 $('quality').onclick = () => { low = !low; renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; };
 function restart() {
   if (!confirm('確定清除目前的營地進度，重新開始？')) return;
-  s = fresh(); target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
-  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
-  try { resetGame(localStorage, s); } catch { }
-  follow.set(s.x, 0, s.z); running = true; $('menu').hidden = true; updateHud(); toast('新營地開張！去雪原獵第一隻熊');
+  try { resetGame(localStorage, fresh()); } catch { }
+  switchState(fresh(), '新營地開張！去雪原獵第一隻熊'); running = true; $('menu').hidden = true;
 }
 $('reset').onclick = restart; $('restart').onclick = restart;
 $('objective').onclick = () => { if (!running) return; const a = nextAction(s); target = { x: a.x, z: a.z }; };
+$('next-stage').onclick = () => { if (!stageCleared(s) || !hasNext(s)) return; const n = nextStage(s); switchState(n, `第 ${n.stage + 1} 關「${stageOf(n).name}」開始！`); running = true; $('menu').hidden = true; };
+function renderStages() {
+  const root = $('stages'); root.replaceChildren();
+  for (const st of stages) {
+    const b = document.createElement('button'); const locked = st.id > s.unlocked;
+    b.className = 'stage' + (st.id === s.stage ? ' current' : '') + (locked ? ' locked' : ''); b.disabled = locked;
+    b.innerHTML = `<b>${st.id + 1}</b><span>${st.name}<small>${locked ? '尚未解鎖' : st.subtitle}</small></span>`;
+    b.onclick = () => { if (st.id === s.stage) { $('start').onclick(); return; } if (!confirm(`前往「${st.name}」會開一座新營地，目前這關的進度會重來。確定嗎？`)) return; switchState(startStage(s, st.id), `第 ${st.id + 1} 關「${st.name}」開始！`); running = true; $('menu').hidden = true; };
+    root.append(b);
+  }
+}
 
 // ---------- input ----------
 const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), point = new THREE.Vector3();
@@ -220,6 +247,11 @@ function updateHud() {
   const action = nextAction(s); $('objective').querySelector('span').textContent = action.text;
   $('bag').querySelector('b').textContent = `${s.meat} / ${capacity(s)}`; $('bag').classList.toggle('full', s.meat >= capacity(s));
   $('stats').textContent = `擊倒 ${s.kills} · 售出 ${s.sold} · ${weaponStats(s.upgrades.weapon).name}`;
+  const st = stageOf(s); const goal = st.goal; const cleared = stageCleared(s);
+  $('stage-name').textContent = `第 ${st.id + 1} 關 ${st.name}`;
+  $('stage-goal').textContent = goal === null ? `終局 · 本關收入 ${s.earned}` : cleared ? `目標達成 ${s.earned} / ${goal}` : `目標 ${s.earned} / ${goal}`;
+  $('stage-bar').style.width = (goal === null ? 100 : Math.min(100, s.earned / goal * 100)) + '%';
+  $('stage').classList.toggle('cleared', cleared); $('next-stage').hidden = !(cleared && hasNext(s));
   padViews.forEach(({ pad: p }, i) => {
     const info = padLabel(s, p), el = padLabels[i].el;
     const near = distance(s, p) < 3.4;
@@ -254,6 +286,7 @@ function draw(t) {
         else if (e.type === 'built') { burst(e.x, e.z); toast(`${e.name} 升級完成！`); beep(880, .3); beep(1320, .4); save(); }
         else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
+        else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); toast(e.hasNext ? '收入目標達成！按「下一關」前往新營地，或繼續賺錢' : '恭喜全部通關！'); beep(880, .3); beep(1320, .5); save(); }
       }
       acc -= 1 / 30;
     }
@@ -293,9 +326,9 @@ function draw(t) {
     const to = new THREE.Vector3(b.x, 0, b.z); if (g.position.distanceTo(to) > 5) g.position.copy(to); else g.position.lerp(to, 1 - Math.exp(-dt * 18));
     const dx = b.x - g.position.x, dz = b.z - g.position.z; if (Math.hypot(dx, dz) > .01) { const a = Math.atan2(dx, dz); g.rotation.y += Math.atan2(Math.sin(a - g.rotation.y), Math.cos(a - g.rotation.y)) * (1 - Math.exp(-dt * 8)); }
     g.position.y = Math.abs(Math.sin(visualTime * 6 + i)) * .04;
-    const bar = g.userData.bar; bar.group.visible = b.hp < config.bearHp; bar.fill.scale.x = 1.4 * Math.max(0, b.hp) / config.bearHp; bar.fill.position.x = -(1.4 - bar.fill.scale.x) / 2; bar.group.rotation.y = -g.rotation.y + Math.PI / 4;
+    const maxHp = preyOf(s, b).hp; const bar = g.userData.bar; bar.group.visible = b.hp < maxHp; bar.fill.scale.x = 1.4 * Math.max(0, b.hp) / maxHp; bar.fill.position.x = -(1.4 - bar.fill.scale.x) / 2; bar.group.rotation.y = -g.rotation.y + Math.PI / 4;
     if (b.hp < g.userData.hp) g.userData.flash = .12; g.userData.hp = b.hp; g.userData.flash = Math.max(0, (g.userData.flash || 0) - dt);
-    const sc = g.userData.flash > 0 ? 1.08 : 1; g.scale.set(sc, 2 - sc, sc);
+    const base = g.userData.kind === 'giant' ? 1.6 : g.userData.kind === 'wolf' ? .72 : 1; const sc = g.userData.flash > 0 ? 1.08 : 1; g.scale.set(base * sc, base * (2 - sc), base * sc);
   });
 
   // loot on the ground

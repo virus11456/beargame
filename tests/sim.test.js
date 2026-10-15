@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fresh, step, buy, capacity, serialize, restore, parseSave, config, table, cashPoint, herdSize, worldBounds, inCamp } from '../src/sim.js';
+import { fresh, step, buy, capacity, serialize, restore, parseSave, config, table, cashPoint, herdSize, worldBounds, inCamp, meatPrice, stages } from '../src/sim.js';
 import { weaponStats } from '../src/progression.js';
 const wait = (s, seconds, input) => { const events = []; for (let i = 0; i < seconds * 30; i++) events.push(...step(s, 1 / 30, input)); return events; };
 const herd = s => s.bears.slice(0, herdSize(s));
@@ -31,7 +31,7 @@ test('hunting drops meat, meat is picked up automatically and respects the carry
 test('dead bears come back after a while so the herd stays dense', () => {
   const s = fresh(); s.bears[0].hp = 0; s.bears[0].respawn = .5; wait(s, 1);
   assert.equal(s.bears[0].hp, config.bearHp);
-  assert.equal(herd(fresh()).length, config.herd);
+  assert.equal(herd(fresh()).length, 24);
 });
 
 test('full loop: stack unloads at the table, customers pay, cash waits beside the table', () => {
@@ -40,7 +40,7 @@ test('full loop: stack unloads at the table, customers pay, cash waits beside th
   assert.equal(s.meat, 0); assert.equal(s.stock + s.sold, 30);
   s.x = 0; s.z = 0; wait(s, 40);
   assert.equal(s.sold, 30); assert.equal(s.stock, 0);
-  assert.equal(s.cash, 30 * config.meatPrice); assert.equal(s.earned, 30 * config.meatPrice); assert.equal(s.coins, 0);
+  assert.equal(s.cash, 30 * meatPrice(s)); assert.equal(s.earned, 30 * meatPrice(s)); assert.equal(s.coins, 0);
   s.x = cashPoint.x; s.z = cashPoint.z; const events = wait(s, 2);
   assert.equal(s.cash, 0); assert.equal(s.coins, 150);
   assert.equal(events.filter(e => e.type === 'collect').reduce((a, e) => a + e.value, 0), 150);
@@ -69,8 +69,8 @@ test('falling in the field returns the player to camp with the meat still on the
 
 test('upgrades change capacity, speed, herd size and world bounds', () => {
   const s = fresh(); s.coins = 10000;
-  assert.equal(buy(s, 'bag'), true); assert.equal(capacity(s), config.capacity + config.capacityPerLevel);
-  assert.equal(buy(s, 'herd'), true); assert.equal(herdSize(s), config.herd + config.herdPerLevel); assert.ok(worldBounds(s).minZ < worldBounds(fresh()).minZ);
+  assert.equal(buy(s, 'bag'), true); assert.equal(capacity(s), stages[0].capacity + config.capacityPerLevel);
+  assert.equal(buy(s, 'herd'), true); assert.equal(herdSize(s), 24 + config.herdPerLevel); assert.ok(worldBounds(s).minZ < worldBounds(fresh()).minZ);
   const slow = fresh(), fast = fresh(); fast.upgrades.speed = 2; slow.x = fast.x = 0; slow.z = fast.z = -12;
   step(slow, 1, { x: 1, z: 0 }); step(fast, 1, { x: 1, z: 0 }); assert.ok(fast.x > slow.x);
   assert.equal(buy(s, 'helper'), false, 'helper needs sales'); s.sold = 30; assert.equal(buy(s, 'helper'), true); assert.equal(buy(s, 'helper'), false);
@@ -89,8 +89,8 @@ test('corrupt saves fall back to a fresh camp and version five camps keep their 
   assert.deepEqual(restore('nonsense'), fresh());
   const old = { version: 5, coins: 100, pendingCash: 40, earned: 900, kills: 12, sold: 70, upgrades: { weapon: 3, bag: 9, speed: 1 }, helper: true, queues: {}, bears: [] };
   const s = parseSave(JSON.stringify(old));
-  assert.equal(s.version, 6); assert.equal(s.coins, 140); assert.equal(s.earned, 900); assert.equal(s.sold, 70);
-  assert.deepEqual(s.upgrades, { weapon: 3, bag: 5, speed: 1, herd: 0 }); assert.equal(s.helper, true); assert.equal(s.meat, 0);
+  assert.equal(s.version, 7); assert.equal(s.coins, 140); assert.equal(s.earned, 900); assert.equal(s.sold, 70);
+  assert.deepEqual(s.upgrades, { weapon: 3, bag: 5, speed: 1, herd: 0 }); assert.equal(s.helper, true); assert.equal(s.meat, 0); assert.equal(s.version, 7);
 });
 
 test('a bear that the player walks away from stops chasing and roams near home', () => {

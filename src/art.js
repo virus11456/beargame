@@ -43,19 +43,29 @@ export function animateHuman(g, time, dt) {
 }
 
 // Polar bear: a soft white body with a dark nose, shaded belly and short legs.
-export function createBear() {
+const preyLooks = {
+  bear: { fur: '#f6f3ea', belly: '#e6e3d8', head: '#fbf9f2', snout: '#ebe8de', leg: '#ece9df', ear: '#fbf9f2', scale: 1 },
+  wolf: { fur: '#b4bcc4', belly: '#d9dee3', head: '#bcc4cb', snout: '#e3e7ea', leg: '#9ea8b1', ear: '#8e979f', scale: .72 },
+  giant: { fur: '#e3edf2', belly: '#cbdae2', head: '#edf4f7', snout: '#d6e3ea', leg: '#d3e0e7', ear: '#edf4f7', scale: 1.6 },
+};
+export function createBear(kind = 'bear') {
+  const look = preyLooks[kind] || preyLooks.bear;
   const g = new THREE.Group();
-  const body = part(g, '#f6f3ea', 0, .85, 0, .85, .62, 1.2, smooth);
-  part(g, '#e6e3d8', 0, .62, -.05, .75, .4, 1.05, smooth, false);
-  part(g, '#fbf9f2', 0, 1.3, 1.05, .52, .45, .5, smooth, false);
-  part(g, '#ebe8de', 0, 1.18, 1.5, .3, .21, .25, smooth, false);
+  const body = part(g, look.fur, 0, .85, 0, .85, .62, 1.2, smooth);
+  part(g, look.belly, 0, .62, -.05, .75, .4, 1.05, smooth, false);
+  part(g, look.head, 0, 1.3, 1.05, .52, .45, .5, smooth, false);
+  part(g, look.snout, 0, 1.18, 1.5, .3, .21, .25, smooth, false);
   part(g, '#2b3238', 0, 1.22, 1.72, .1, .08, .07, smooth, false);
-  for (const x of [-.34, .34]) { part(g, '#fbf9f2', x, 1.68, .88, .13, .15, .11, smooth, false); part(g, '#24303a', x * .72, 1.46, 1.42, .035, .04, .025, smooth, false); }
-  for (const x of [-.52, .52]) for (const z of [-.75, .7]) part(g, '#ece9df', x, .38, z, .48, .72, .52, rounded, false);
+  for (const x of [-.34, .34]) { part(g, look.ear, x, 1.68, .88, kind === 'wolf' ? .11 : .13, kind === 'wolf' ? .24 : .15, .11, smooth, false); part(g, '#24303a', x * .72, 1.46, 1.42, .035, .04, .025, smooth, false); }
+  for (const x of [-.52, .52]) for (const z of [-.75, .7]) part(g, look.leg, x, .38, z, .48, .72, .52, rounded, false);
+  if (kind === 'giant') { part(g, '#c9d8e0', -.3, 1.45, .2, .5, .25, .7, smooth, false); part(g, '#c9d8e0', .35, 1.4, -.3, .45, .22, .6, smooth, false); }
+  if (kind === 'wolf') part(g, look.fur, 0, 1, -1.35, .16, .16, .7, smooth, false);
+  g.scale.setScalar(look.scale);
   const bar = new THREE.Group(); bar.position.y = 2.25; g.add(bar);
   const back = part(bar, '#2a2a2a', 0, 0, 0, 1.4, .1, .12, unit, false);
-  const fill = part(bar, '#ff4d4d', 0, .01, .02, 1.4, .12, .12, unit, false);
-  g.userData.bar = { group: bar, back, fill }; g.userData.body = body; return g;
+  const fill = part(bar, kind === 'giant' ? '#ff8c3a' : '#ff4d4d', 0, .01, .02, 1.4, .12, .12, unit, false);
+  bar.scale.setScalar(1 / look.scale);
+  g.userData.bar = { group: bar, back, fill }; g.userData.body = body; g.userData.kind = kind; return g;
 }
 
 // Dead winter tree: tapered trunk and a few bare branches.

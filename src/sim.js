@@ -5,43 +5,59 @@
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
 import { pads, padRadius, price, level, maxLevel, canHire, apply, weaponStats, newAssistant, assistantCapacity, updateAssistant } from './progression.js';
 import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside } from './camp.js';
-export { price, level, canHire, pads, weaponStats, camp, gate, inCamp, routeTarget };
+import { stages, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
+export { price, level, canHire, pads, weaponStats, camp, gate, inCamp, routeTarget, stages, stageOf, prey, kindOf, stageCleared, hasNext };
 
 export const config = {
-  speed: 6.2, capacity: 30, capacityPerLevel: 20, meatPrice: 5,
+  speed: 6.2, capacityPerLevel: 20,
   pickup: 2, dropLimit: 320, stockLimit: 240, serveInterval: .4,
-  bearHp: 30, lootPerBear: 3, herd: 24, herdPerLevel: 8, maxBears: 48, respawn: 7,
-  bearSpeed: 2.3, aggro: 6, biteRange: 1.45, biteDamage: 2, biteInterval: 1.5, maxBiters: 3,
+  bearHp: prey.bear.hp, lootPerBear: prey.bear.loot, herdPerLevel: 6, maxBears: maxPrey,
+  aggro: 6, biteRange: 1.45, maxBiters: 3,
   regenCamp: 10, regenField: 1.2,
 };
+export const meatPrice = s => stageOf(s).meatPrice;
+export const preyOf = (s, b) => prey[kindOf(stageOf(s), b.id)];
 export const table = { x: 7.2, z: 3.6 };
 export const tableRange = 2.4;
 export const cashPoint = { x: 4.4, z: 5.2 };
 export const cashRange = 1.8;
 export const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
-export const herdSize = s => Math.min(config.maxBears, config.herd + s.upgrades.herd * config.herdPerLevel);
+export const herdSize = s => Math.min(config.maxBears, baseHerd(stageOf(s)) + s.upgrades.herd * config.herdPerLevel);
 export const worldBounds = s => { const grow = s.upgrades.herd * 4; return { minX: -27 - grow, maxX: 27 + grow, minZ: -38 - grow, maxZ: 10 }; };
-export const capacity = s => config.capacity + s.upgrades.bag * config.capacityPerLevel;
+export const capacity = s => stageOf(s).capacity + s.upgrades.bag * config.capacityPerLevel;
 export const moveSpeed = s => config.speed * (1 + s.upgrades.speed * .15);
 
 // Deterministic pseudo-random so a fresh camp is identical in every test.
 const noise = n => { const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
-function bear(i) {
+function bear(i, stage = stages[0]) {
   const ring = Math.floor(i / 8), slot = i % 8, angle = slot / 8 * Math.PI * 2 + ring * .4 + noise(i) * .6;
-  const radius = 2.5 + ring * 2.6 + noise(i + 100) * 1.5;
+  const kind = kindOf(stage, i);
+  const radius = (kind === 'giant' ? 9 : 2.5) + ring * 2.6 + noise(i + 100) * 1.5;
   const hx = Math.cos(angle) * radius * 1.4, hz = Math.min(camp.minZ - 3.5, -17 + Math.sin(angle) * radius);
-  return { id: i, x: hx, z: hz, hx, hz, hp: config.bearHp, cool: 1 + noise(i + 7), respawn: 0 };
+  return { id: i, x: hx, z: hz, hx, hz, hp: prey[kind].hp, cool: 1 + noise(i + 7), respawn: 0 };
 }
-export function fresh() {
+export function fresh(stage = 0, unlocked = 0) {
+  const def = stages[Math.max(0, Math.min(stages.length - 1, stage))];
   return {
-    version: 6, x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
+    version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0,
+    x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
     meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0 }, helper: false,
     paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0 }, padLatch: null,
     attack: 0, transfer: 0, serve: 0, cashTimer: 0, payTimer: 0, time: 0,
     customers: newCustomers(), assistant: newAssistant(),
-    bears: Array.from({ length: config.maxBears }, (_, i) => bear(i)), drops: [],
+    bears: Array.from({ length: config.maxBears }, (_, i) => bear(i, def)), drops: [],
   };
 }
+// Start the next stage (or replay an unlocked one) as a fresh camp; lifetime
+// earnings carry over as a record only.
+export function startStage(s, stage) {
+  const index = Math.max(0, Math.min(stages.length - 1, stage));
+  if (index > s.unlocked) return s;
+  const next = fresh(index, s.unlocked);
+  next.lifetime = s.lifetime + s.earned;
+  return next;
+}
+export const nextStage = s => stageCleared(s) && hasNext(s) ? startStage({ ...s, unlocked: Math.max(s.unlocked, s.stage + 1) }, s.stage + 1) : s;
 export const padState = (s, key) => {
   const lvl = level(s, key), cost = price(s, key);
   return { level: lvl, max: maxLevel(key), done: cost === null, cost, paid: s.paid[key], remaining: cost === null ? 0 : cost - s.paid[key], locked: key === 'helper' && !canHire(s) };
@@ -82,9 +98,9 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
       b.hp -= weapon.damage;
       events.push({ type: 'hit', x: b.x, z: b.z, damage: weapon.damage });
       if (b.hp <= 0) {
-        s.kills++; b.respawn = config.respawn;
-        for (let j = 0; j < config.lootPerBear; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * .8, z: b.z + Math.sin(j * 2.1 + b.id) * .8 });
-        events.push({ type: 'kill', x: b.x, z: b.z });
+        const kind = preyOf(s, b); s.kills++; b.respawn = kind.respawn;
+        for (let j = 0; j < kind.loot; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08) });
+        events.push({ type: 'kill', x: b.x, z: b.z, kind: kindOf(stageOf(s), b.id) });
       }
     }
   }
@@ -92,14 +108,15 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
   for (const b of active) {
     if (b.hp <= 0) {
       b.respawn -= dt;
-      if (b.respawn <= 0 && s.drops.length < config.dropLimit) Object.assign(b, bear(b.id), { cool: 1.2 });
+      if (b.respawn <= 0 && s.drops.length < config.dropLimit) Object.assign(b, bear(b.id, stageOf(s)), { cool: 1.2 });
       continue;
     }
+    const kind = preyOf(s, b);
     b.cool -= dt;
     const d = distance(s, b);
     if (d < config.aggro && !inCamp(s)) {
-      if (d > config.biteRange * .8) { b.x += (s.x - b.x) / d * config.bearSpeed * dt; b.z += (s.z - b.z) / d * config.bearSpeed * dt; }
-      else if (b.cool <= 0 && biters < config.maxBiters) { biters++; s.hp -= config.biteDamage; b.cool = config.biteInterval; events.push({ type: 'hurt', damage: config.biteDamage, x: b.x, z: b.z }); }
+      if (d > config.biteRange * kind.size * .8) { b.x += (s.x - b.x) / d * kind.speed * dt; b.z += (s.z - b.z) / d * kind.speed * dt; }
+      else if (b.cool <= 0 && biters < config.maxBiters) { biters++; s.hp -= kind.bite; b.cool = kind.biteInterval; events.push({ type: 'hurt', damage: kind.bite, x: b.x, z: b.z }); }
     } else {
       const roam = { x: b.hx + Math.sin(s.time * .21 + b.id * 2.1) * 1.6, z: b.hz + Math.cos(s.time * .17 + b.id * 1.7) * 1.2 };
       const home = distance(roam, b);
@@ -135,8 +152,9 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
     if (s.serve >= config.serveInterval) {
       s.serve -= config.serveInterval; s.stock--;
       const customer = takeMeat(s.customers);
-      s.cash += config.meatPrice; s.earned += config.meatPrice; s.sold++;
-      events.push({ type: 'sale', value: config.meatPrice, customerId: customer.id, customer: { x: customer.x, z: customer.z } });
+      const value = meatPrice(s); s.cash += value; s.earned += value; s.sold++;
+      events.push({ type: 'sale', value, customerId: customer.id, customer: { x: customer.x, z: customer.z } });
+      if (!s.cleared && stageCleared(s)) { s.cleared = true; events.push({ type: 'stageClear', stage: s.stage, hasNext: hasNext(s) }); }
     }
   } else s.serve = 0;
 
@@ -144,7 +162,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
   if (s.cash > 0 && distance(s, cashPoint) < cashRange) {
     s.cashTimer -= dt;
     while (s.cashTimer <= 0 && s.cash > 0) {
-      const chunk = Math.min(s.cash, Math.max(config.meatPrice, Math.ceil(s.cash / 30)));
+      const chunk = Math.min(s.cash, Math.max(meatPrice(s), Math.ceil(s.cash / 30)));
       s.cash -= chunk; s.coins += chunk; s.cashTimer += .04;
       events.push({ type: 'collect', value: chunk, from: { ...cashPoint }, to: { x: s.x, z: s.z } });
     }
@@ -179,7 +197,7 @@ const count = (v, max = Infinity) => Number.isInteger(v) && v >= 0 && v <= max;
 export function parseSave(text) {
   const v = JSON.parse(text);
   if (!v || typeof v !== 'object') throw Error('save');
-  const s = fresh();
+  let s = fresh();
   if ([2, 3, 4, 5].includes(v.version)) {
     // Earlier camps used a different production line; keep the money and
     // the levels that still exist, and start the new loop with them.
@@ -189,7 +207,10 @@ export function parseSave(text) {
     if (v.helper === true) s.helper = true;
     return s;
   }
-  if (v.version !== 6) throw Error('version');
+  if (v.version === 6) { v.version = 7; v.stage = 0; v.unlocked = 0; v.cleared = false; v.lifetime = 0; }
+  if (v.version !== 7) throw Error('version');
+  if (!count(v.stage, stages.length - 1) || !count(v.unlocked, stages.length - 1) || typeof v.cleared !== 'boolean' || !count(v.lifetime)) throw Error('stage');
+  const stage = stages[v.stage];
   for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer']) if (!Number.isFinite(v[k])) throw Error(k);
   for (const k of ['hp', 'time']) if (!finite(v[k], 0)) throw Error(k);
   for (const k of ['coins', 'cash', 'earned', 'kills', 'sold', 'meat', 'stock']) if (!count(v[k])) throw Error(k);
@@ -198,12 +219,15 @@ export function parseSave(text) {
   for (const k of Object.keys(s.paid)) if (!count(v.paid?.[k])) throw Error('paid');
   if (typeof v.helper !== 'boolean') throw Error('helper');
   if (!validCustomers(v.customers)) throw Error('customers');
-  if (!Array.isArray(v.bears) || v.bears.length !== config.maxBears || v.bears.some((b, i) => b.id !== i || ['x', 'z', 'hx', 'hz', 'hp', 'cool', 'respawn'].some(k => !Number.isFinite(b[k])))) throw Error('bears');
+  if (!Array.isArray(v.bears) || v.bears.length > config.maxBears || v.bears.some((b, i) => b.id !== i || ['x', 'z', 'hx', 'hz', 'hp', 'cool', 'respawn'].some(k => !Number.isFinite(b[k])))) throw Error('bears');
+  s = fresh(v.stage, v.unlocked);
+  // Older saves stored fewer prey slots; the missing ones spawn fresh.
+  v.bears = s.bears.map((fresh, i) => v.bears[i] ? { ...v.bears[i], hp: Math.min(v.bears[i].hp, prey[kindOf(stage, i)].hp) } : fresh);
   if (!Array.isArray(v.drops) || v.drops.length > config.dropLimit + 50 || v.drops.some(d => !Number.isFinite(d.x) || !Number.isFinite(d.z))) throw Error('drops');
   if (!v.assistant || ['x', 'z', 'timer'].some(k => !Number.isFinite(v.assistant[k])) || !count(v.assistant.load, assistantCapacity) || !['idle', 'collect', 'return'].includes(v.assistant.phase)) throw Error('assistant');
   for (const key of Object.keys(s)) if (key in v) s[key] = v[key];
   s.drops = v.drops.map(d => ({ x: d.x, z: d.z }));
-  s.padLatch = null; s.payTimer = 0; s.hp = Math.min(100, s.hp);
+  s.padLatch = null; s.payTimer = 0; s.hp = Math.min(100, s.hp); s.unlocked = Math.max(s.unlocked, s.stage); s.cleared = stageCleared(s);
   const b = worldBounds(s);
   s.x = Math.max(b.minX, Math.min(b.maxX, s.x)); s.z = Math.max(b.minZ, Math.min(b.maxZ, s.z));
   for (const key of Object.keys(s.paid)) { const cost = price(s, key); if (cost === null) s.paid[key] = 0; else s.paid[key] = Math.min(s.paid[key], cost - 1); }

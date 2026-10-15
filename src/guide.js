@@ -1,4 +1,4 @@
-import { capacity, distance, table, cashPoint, pads, price, level, canHire, inCamp, herdSize } from './sim.js';
+import { capacity, distance, table, cashPoint, pads, price, level, canHire, inCamp, herdSize, stageCleared, hasNext } from './sim.js';
 
 // The next useful move, derived from what the player actually carries.
 export function nextAction(s) {
@@ -11,6 +11,7 @@ export function nextAction(s) {
   const affordable = pads.filter(p => price(s, p.id) !== null && (p.id !== 'helper' || canHire(s)) && s.coins >= price(s, p.id) - s.paid[p.id]).sort((a, b) => price(s, a.id) - price(s, b.id))[0];
   if (affordable) return { id: 'pad', pad: affordable.id, text: `站到「${affordable.name}」標記上升級（${price(s, affordable.id) - s.paid[affordable.id]} 元）`, x: affordable.x, z: affordable.z, name: affordable.name };
   const bear = s.bears.filter(b => b.hp > 0 && b.id < herdSize(s)).sort((a, b) => distance(s, a) - distance(s, b))[0];
+  if (stageCleared(s) && hasNext(s)) return { id: 'next', text: '目標達成！按「下一關」出發，或繼續狩獵賺錢', x: bear?.x ?? 0, z: bear?.z ?? -20, name: '下一關' };
   return { id: 'hunt', text: bear ? '走向熊群，靠近就會自動揮砍' : '熊群正在回來，先整理營地', x: bear?.x ?? 0, z: bear?.z ?? -20, name: '北極熊' };
 }
 

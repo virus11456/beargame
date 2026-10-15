@@ -1,4 +1,5 @@
 import { routeTarget } from './camp.js';
+import { stageOf } from './stages.js';
 // Ground upgrade pads. Standing on a pad drains carried cash into it bit by bit,
 // exactly like the reference playable: the price counts down and the upgrade
 // applies when it reaches zero. Partial payments stay on the pad.
@@ -14,7 +15,9 @@ export const level = (s, key) => key === 'helper' ? (s.helper ? 1 : 0) : s.upgra
 export const maxLevel = key => pads.find(p => p.id === key).prices.length;
 export function price(s, key) {
   const pad = pads.find(p => p.id === key);
-  return pad ? pad.prices[level(s, key)] ?? null : null;
+  if (!pad) return null;
+  const base = pad.prices[level(s, key)];
+  return base === undefined ? null : Math.round(base * stageOf(s).priceScale / 5) * 5;
 }
 export const canHire = s => s.sold >= 30;
 export function apply(s, key) {

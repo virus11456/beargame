@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fresh, step, serialize, parseSave, price, table, config } from '../src/sim.js';
+import { fresh, step, serialize, parseSave, price, table, config, meatPrice } from '../src/sim.js';
 import { pads, updateAssistant, assistantCapacity, maxLevel } from '../src/progression.js';
 const run = (s, seconds) => { const events = []; for (let i = 0; i < seconds * 30; i++) events.push(...step(s, 1 / 30)); return events; };
 const pad = id => pads.find(p => p.id === id);
@@ -63,7 +63,7 @@ test('loading never resumes a pending pad latch', () => {
 });
 
 test('first upgrades are reachable after a few bears, expansion after many', () => {
-  const perBear = config.lootPerBear * config.meatPrice;
+  const perBear = config.lootPerBear * meatPrice(fresh());
   assert.equal(Math.ceil(price(fresh(), 'weapon') / perBear), 3);
   assert.ok(Math.ceil(price(fresh(), 'herd') / perBear) >= 20);
 });

@@ -46,7 +46,7 @@ test('blocked browser storage is reported without crashing', () => {
 test('an old production-line save loads through storage and keeps its wallet', () => {
   const old = { version: 4, coins: 300, earned: 300, kills: 9, sold: 25, upgrades: { weapon: 1, bag: 1, speed: 0 }, helper: false };
   const loaded = loadGame({ getItem: k => k === SAVE_KEY ? JSON.stringify(old) : null });
-  assert.equal(loaded.state.version, 6); assert.equal(loaded.state.coins, 300); assert.equal(loaded.notice, '');
+  assert.equal(loaded.state.version, 7); assert.equal(loaded.state.coins, 300); assert.equal(loaded.notice, '');
 });
 
 test('ground never floods with meat: respawns pause at the drop limit without deleting loot', () => {
