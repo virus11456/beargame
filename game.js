@@ -173,6 +173,40 @@ function applyTheme() {
   scene.background.set(th.sky); scene.fog.color.set(th.sky); renderer.setClearColor(th.sky);
   hemi.color.set(th.hemi); hemi.groundColor.set(th.hemiGround); sun.color.set(th.sun); sun.intensity = th.sunStrength;
   groundMesh.material.color.set(th.ground); floorMesh.material.color.set(th.floor); floorLightMesh.material.color.set(th.floorLight);
+  buildStageProps(stageOf(s).theme);
+}
+// ---------- per-stage scenery: frozen lake, glacier wall, aurora ribbons, night torches ----------
+const stageProps = new THREE.Group(); scene.add(stageProps);
+let shownProps = '', auroraRibbons = [], torches = [];
+function buildStageProps(theme) {
+  if (theme === shownProps) return; shownProps = theme;
+  for (const m of stageProps.children) m.traverse?.(o => { if (o.geometry && o.userData.own) o.geometry.dispose(); });
+  stageProps.clear(); auroraRibbons = []; torches = [];
+  if (theme === 'ice' || theme === 'aurora' || theme === 'night') {
+    // A frozen lake east of the north pack, with cracks and ice crystals around the shore.
+    const lake = new THREE.Mesh(new THREE.CircleGeometry(9, 40), new THREE.MeshStandardMaterial({ color: theme === 'night' ? '#9fb9cc' : '#cfe7f3', roughness: .25, metalness: .1 }));
+    lake.rotation.x = -Math.PI / 2; lake.position.set(24, .02, -20); lake.scale.set(1.3, 1, 1); lake.receiveShadow = true; stageProps.add(lake);
+    for (let i = 0; i < 7; i++) { const crack = box(stageProps, '#f4fbff', 24 + (noise(i) - .5) * 14, .04, -20 + (noise(i + 3) - .5) * 12, .08, .02, 2 + noise(i + 5) * 4, false); crack.rotation.y = noise(i + 9) * 3; }
+    for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2, r = 10 + noise(i + 20) * 3; const c = new THREE.Mesh(new THREE.ConeGeometry(.5 + noise(i) * .5, 1.6 + noise(i + 1) * 1.8, 5), new THREE.MeshStandardMaterial({ color: '#bfe3f5', transparent: true, opacity: .85, roughness: .2 })); c.position.set(24 + Math.cos(a) * r * 1.3, .8, -20 + Math.sin(a) * r); c.rotation.z = (noise(i + 2) - .5) * .5; c.castShadow = true; stageProps.add(c); }
+  }
+  if (theme === 'dusk' || theme === 'aurora' || theme === 'night') {
+    // Glacier wall along the far north with icicles, a backdrop for the deeper camps.
+    for (let i = 0; i < 14; i++) { const x = -42 + i * 6.5, h = 7 + noise(i + 30) * 6; const slab = box(stageProps, i % 3 ? '#dbe9f0' : '#c7dde8', x, h / 2, -46 - noise(i + 31) * 3, 6.8, h, 5 + noise(i + 32) * 3); slab.rotation.y = (noise(i + 33) - .5) * .3; }
+    for (let i = 0; i < 10; i++) { const icicle = new THREE.Mesh(new THREE.ConeGeometry(.35, 2.2, 5), material('#eaf6fb')); icicle.rotation.x = Math.PI; icicle.position.set(-40 + i * 8.5, 7 + noise(i + 40) * 4, -43.5); stageProps.add(icicle); }
+  }
+  if (theme === 'aurora' || theme === 'night') {
+    // Aurora ribbons: wavy translucent planes high above the field, animated each frame.
+    for (let i = 0; i < 3; i++) {
+      const geo = new THREE.PlaneGeometry(70, 7, 48, 1); geo.userData.own = true;
+      const mat = new THREE.MeshBasicMaterial({ color: i === 1 ? '#b48cff' : '#7fffc8', transparent: true, opacity: theme === 'night' ? .4 : .32, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+      const ribbon = new THREE.Mesh(geo, mat); ribbon.position.set(-5 + i * 6, 17 + i * 2.5, -32 - i * 5); ribbon.rotation.x = -.55; ribbon.rotation.y = .3; ribbon.userData.phase = i * 1.7; stageProps.add(ribbon); auroraRibbons.push(ribbon);
+    }
+  }
+  if (theme === 'night') {
+    // Torches at the fence corners and the gates: warm point lights that flicker.
+    const c = maxCamp; const spots = [[c.minX - 1, c.minZ - 1], [c.maxX + 1, c.minZ - 1], [c.minX - 1, c.maxZ + 1], [c.maxX + 1, c.maxZ + 1]];
+    spots.forEach(([x, z], i) => { box(stageProps, '#5a3f2a', x, 1.2, z, .18, 2.4, .18); box(stageProps, '#3b2a1c', x, 2.45, z, .5, .3, .5, false); const flame = new THREE.Mesh(new THREE.ConeGeometry(.28, .9, 6), new THREE.MeshBasicMaterial({ color: '#ffb347' })); flame.position.set(x, 3, z); stageProps.add(flame); const light = new THREE.PointLight('#ffa040', 1.6, 16, 1.6); light.position.set(x, 3.2, z); stageProps.add(light); torches.push({ flame, light, phase: i }); });
+  }
 }
 function switchState(next, message) {
   s = next; target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
@@ -421,6 +455,8 @@ function draw(t) {
   follow.lerp(new THREE.Vector3(s.x, 0, s.z), 1 - Math.exp(-dt * 4.5));
   camera.position.copy(follow).add(cameraOffset); camera.lookAt(follow); if (shake > 0) { shake = Math.max(0, shake - dt * 1.8); camera.position.x += (Math.random() - .5) * shake * .9; camera.position.y += (Math.random() - .5) * shake * .6; }
   sun.position.set(follow.x - 18, 32, follow.z + 14); sun.target.position.copy(follow);
+  for (const r of auroraRibbons) { const pos = r.geometry.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, Math.sin(visualTime * .9 + pos.getX(i) * .18 + r.userData.phase) * 1.6 + (i % 2 ? 3.5 : -3.5)); pos.needsUpdate = true; }
+  for (const tch of torches) { const f = .85 + Math.sin(visualTime * 11 + tch.phase * 2) * .18 + Math.sin(visualTime * 23 + tch.phase) * .08; tch.flame.scale.set(f, f * 1.1, f); tch.light.intensity = 1.3 + f * .5; }
   snow.position.set(follow.x, 0, follow.z); const sp = snowGeo.attributes.position; for (let i = 0; i < snowCount; i++) { let y = sp.array[i * 3 + 1] - dt * 2.2; if (y < 0) y += 24; sp.array[i * 3 + 1] = y; sp.array[i * 3] += Math.sin(visualTime + i) * dt * .3; } sp.needsUpdate = true;
 
   // bears
