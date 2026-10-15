@@ -11,6 +11,10 @@ installSprite(document);
 import { counter, customerCount } from './src/customers.js';
 
 const $ = id => document.getElementById(id);
+// Build stamp injected by vite.config.js: shown in the corner and the pause menu.
+const build = typeof __BUILD__ !== 'undefined' ? __BUILD__ : { version: 'dev', sha: 'local', built: new Date().toISOString() };
+const buildLabel = (() => { const d = new Date(build.built); const pad = n => String(n).padStart(2, '0'); return `v${build.version} · ${build.sha} · ${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; })();
+$('version').textContent = buildLabel;
 let loaded; try { loaded = loadGame(localStorage); } catch { loaded = { state: fresh(), notice: '無法使用瀏覽器存檔。' }; }
 let s = loaded.state;
 let running = false, sound = true, low = false, audio, keys = {}, joy = { x: 0, z: 0 }, target = null, saveClock = 0, toastUntil = 0;
@@ -490,7 +494,7 @@ function draw(t) {
   animateHuman(player, visualTime, dt); if (s.helper) animateHuman(helper, visualTime, dt); customers.forEach(g => animateHuman(g, visualTime, dt));
   renderer.render(scene, camera);
 }
-if (loaded.notice) $('save-note').textContent = loaded.notice;
+$('save-note').textContent = `${loaded.notice || '自動儲存於此瀏覽器 · 支援觸控與鍵盤'} · 版本 ${buildLabel}`;
 if (s.time > 0) $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`;
 buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle);
 if (location.search.includes('debug')) window.__polar = { state: () => s, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), prey: i => { const g = bearViews[i]; const w = new THREE.Vector3(); g.userData.body.getWorldPosition(w); return { visible: g.visible, dying: g.userData.dying, spawn: g.userData.spawn, pos: [g.position.x, g.position.y, g.position.z], inner: [g.userData.inner.position.x, g.userData.inner.position.y, g.userData.inner.position.z], rot: [g.userData.inner.rotation.x, g.userData.inner.rotation.z], scale: g.userData.inner.scale.y, world: [w.x, w.y, w.z] }; }, slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };

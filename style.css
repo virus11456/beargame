@@ -90,3 +90,6 @@ h1{font-size:46px;letter-spacing:5px;margin:18px 0}h1 span{display:block;font-si
 
 
 .update{position:absolute;top:calc(var(--top) + 54px);right:var(--right);z-index:6;background:#f0b23a;color:#4a2f05;border-radius:12px;padding:0 14px;min-height:38px;font-size:12px;font-weight:900;box-shadow:0 4px 0 #b7801c;display:flex;align-items:center;gap:6px;animation:pulse 1.2s infinite}
+
+.version{position:absolute;right:var(--right);bottom:var(--bottom);font-size:10px;color:#6c8089;background:#ffffffb8;border-radius:8px;padding:3px 7px;pointer-events:none;z-index:3;font-variant-numeric:tabular-nums}
+@media(max-height:520px){.version{bottom:calc(var(--bottom) + 44px)}}
