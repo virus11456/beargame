@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createHuman, animateHuman, createBear, createTree, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
-import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated } from './src/sim.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf } from './src/sim.js';
 import { gates } from './src/camp.js';
 import { themes } from './src/stages.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
@@ -153,7 +153,7 @@ function applyTheme() {
 function switchState(next, message) {
   s = next; target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
   for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
-  buildBears(); applyTheme(); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message);
+  buildBears(); applyTheme(); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
 }
 buildBears();
 const customers = Array.from({ length: customerCount }, (_, i) => { const g = createHuman(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'); g.scale.setScalar(.92); g.userData.meat = rbox(g, '#e0737e', 0, 1.05, .55, .6, .25, .5); g.userData.meat.visible = false; scene.add(g); return g; });
@@ -189,21 +189,34 @@ const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: '#fffff
 function beep(f = 500, len = .1, type = 'sine', gain = .04) { if (!sound || !audio) return; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, audio.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(40, f * .6), audio.currentTime + len); g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + len + .02); }
 function toast(t) { $('toast').textContent = t; $('toast').style.opacity = 1; toastUntil = performance.now() + 2400; }
 function save() { try { saveGame(localStorage, s); } catch { $('save-note').textContent = '瀏覽器不允許儲存，進度只保留於本次遊玩。'; } }
-function stop() { renderStages(); running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`; save(); }
-$('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { } running = true; $('menu').hidden = true; };
+function stop() { if (storyMode) { $('story').hidden = true; storyMode = null; } renderStages(); running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`; save(); }
+$('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { } $('menu').hidden = true; if (!s.storySeen) showStory('intro'); else running = true; };
 $('pause').onclick = stop;
 $('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; };
 $('quality').onclick = () => { low = !low; renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; };
 function restart() {
   if (!confirm('確定清除目前的營地進度，重新開始？')) return;
   try { resetGame(localStorage, fresh()); } catch { }
-  switchState(fresh(), '新營地開張！去雪原獵第一隻熊'); running = true; $('menu').hidden = true;
+  switchState(fresh(), '新營地開張！去雪原獵第一隻熊');
 }
 $('reset').onclick = restart; $('restart').onclick = restart;
 $('name').onchange = () => { const v = $('name').value.trim().slice(0, 12); s.name = v || '獵人'; $('name').value = s.name; save(); updateHud(); };
 $('name').onkeydown = e => e.stopPropagation();
 $('objective').onclick = () => { if (!running) return; const a = nextAction(s); target = { x: a.x, z: a.z }; };
-$('next-stage').onclick = () => { if (!stageCleared(s) || !hasNext(s)) return; const n = nextStage(s); switchState(n, `第 ${n.stage + 1} 關「${stageOf(n).name}」開始！`); running = true; $('menu').hidden = true; };
+let storyMode = null;
+function showStory(kind) {
+  const st = stageOf(s), story = storyOf(s); storyMode = kind; running = false; keys = {}; clearJoy(); target = null;
+  $('story-chapter').textContent = `第 ${st.id + 1} 章 · ${st.subtitle}`; $('story-title').textContent = st.name; $('story-speaker').textContent = story.speaker;
+  $('story-text').textContent = kind === 'intro' ? story.intro.join('\n') : story.cleared;
+  $('story-goal').innerHTML = kind === 'intro' ? `${icon('navigate')}${st.goal === null ? story.goal : `${story.goal}：收入 ${st.goal} 元`}` : `${icon('check')}本關收入 ${s.earned} 元・擊倒 ${s.kills}`;
+  $('story-go').innerHTML = kind === 'intro' ? `出發 ${icon('arrow')}` : `繼續賺錢 ${icon('arrow')}`;
+  $('story-next').hidden = !(kind === 'clear' && hasNext(s));
+  $('story').hidden = false;
+}
+function closeStory() { $('story').hidden = true; storyMode = null; if (!s.storySeen) { s.storySeen = true; save(); } running = true; $('menu').hidden = true; }
+$('story-go').onclick = closeStory;
+$('story-next').onclick = () => { $('story').hidden = true; storyMode = null; $('next-stage').onclick(); };
+$('next-stage').onclick = () => { if (!stageCleared(s) || !hasNext(s)) return; const n = nextStage(s); switchState(n, `第 ${n.stage + 1} 關「${stageOf(n).name}」開始！`); };
 function renderStages() {
   $('name').value = s.name;
   const best = Object.entries(s.records).map(([k, r]) => `<span>第 ${+k + 1} 關 擊倒 ${r.kills}・收入 ${r.earned}</span>`).join('');
@@ -213,7 +226,7 @@ function renderStages() {
     const b = document.createElement('button'); const locked = st.id > s.unlocked;
     b.className = 'stage' + (st.id === s.stage ? ' current' : '') + (locked ? ' locked' : ''); b.disabled = locked;
     b.innerHTML = `<b>${st.id + 1}</b><span>${st.name}<small>${locked ? '尚未解鎖' : st.subtitle}</small></span>`;
-    b.onclick = () => { if (st.id === s.stage) { $('start').onclick(); return; } if (!confirm(`前往「${st.name}」會開一座新營地，目前這關的進度會重來。確定嗎？`)) return; switchState(startStage(s, st.id), `第 ${st.id + 1} 關「${st.name}」開始！`); running = true; $('menu').hidden = true; };
+    b.onclick = () => { if (st.id === s.stage) { $('start').onclick(); return; } if (!confirm(`前往「${st.name}」會開一座新營地，目前這關的進度會重來。確定嗎？`)) return; switchState(startStage(s, st.id), `第 ${st.id + 1} 關「${st.name}」開始！`); };
     root.append(b);
   }
 }
@@ -264,7 +277,7 @@ function updateHud() {
   const autoCount = Object.values(automation(s)).filter(Boolean).length; $('auto-pill').hidden = autoCount === 0; $('auto-pill').classList.toggle('full', autoCount === 4); $('auto-pill').querySelector('span').textContent = autoCount === 4 ? '全自動運轉' : `自動化 ${autoCount}/4`;
   const st = stageOf(s); const goal = st.goal; const cleared = stageCleared(s);
   $('stage-name').textContent = `第 ${st.id + 1} 關 ${st.name}`;
-  $('stage-goal').textContent = goal === null ? `終局 · 本關收入 ${s.earned}` : cleared ? `目標達成 ${s.earned} / ${goal}` : `目標 ${s.earned} / ${goal}`;
+  $('stage-goal').textContent = goal === null ? `${storyOf(s).goal} · ${s.earned}` : cleared ? `達成 ${s.earned} / ${goal}` : `${storyOf(s).goal} ${s.earned} / ${goal}`;
   $('stage-bar').style.width = (goal === null ? 100 : Math.min(100, s.earned / goal * 100)) + '%';
   $('stage').classList.toggle('cleared', cleared); $('next-stage').hidden = !(cleared && hasNext(s));
   padViews.forEach(({ pad: p }, i) => {
@@ -303,7 +316,7 @@ function draw(t) {
         else if (e.type === 'built') { burst(e.x, e.z); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); beep(880, .3); beep(1320, .4); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
         else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
-        else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); toast(e.hasNext ? '收入目標達成！按「下一關」前往新營地，或繼續賺錢' : '恭喜全部通關！'); beep(880, .3); beep(1320, .5); save(); }
+        else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); beep(880, .3); beep(1320, .5); save(); setTimeout(() => showStory('clear'), 900); }
       }
       acc -= 1 / 30;
     }

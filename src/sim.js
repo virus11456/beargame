@@ -5,8 +5,8 @@
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
 import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter } from './progression.js';
 import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside } from './camp.js';
-import { stages, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
-export { price, level, canHire, unlocked, automation, fullyAutomated, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, stages, stageOf, prey, kindOf, stageCleared, hasNext };
+import { stages, stories, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
+export { price, level, canHire, unlocked, automation, fullyAutomated, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
 
 export const config = {
   speed: 6.2, capacityPerLevel: 20,
@@ -42,7 +42,7 @@ function bear(i, stage = stages[0]) {
 export function fresh(stage = 0, unlocked = 0) {
   const def = stages[Math.max(0, Math.min(stages.length - 1, stage))];
   return {
-    version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {},
+    version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {}, storySeen: false,
     x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
     meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0 }, helper: false, cashier: false, hunters: [],
     paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0, tower: 0, cashier: 0, hunter: 0 }, padLatch: null,
@@ -231,7 +231,8 @@ export function parseSave(text) {
   if (v.version !== 7) throw Error('version');
   if (!count(v.stage, stages.length - 1) || !count(v.unlocked, stages.length - 1) || typeof v.cleared !== 'boolean' || !count(v.lifetime)) throw Error('stage');
   const stage = stages[v.stage];
-  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {};
+  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false;
+  if (typeof v.storySeen !== 'boolean') throw Error('story');
   if (typeof v.name !== 'string' || v.name.length > 16 || typeof v.cashier !== 'boolean' || !count(v.totalKills) || typeof v.records !== 'object' || v.records === null) throw Error('profile');
   if (!Array.isArray(v.hunters) || v.hunters.length > 3 || v.hunters.some(h => !Number.isFinite(h.x) || !Number.isFinite(h.z) || !finite(h.cool, 0))) throw Error('hunters');
   for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer', 'towerTimer']) if (!Number.isFinite(v[k])) throw Error(k);
@@ -259,3 +260,5 @@ export function parseSave(text) {
   return s;
 }
 export function restore(text) { try { return parseSave(text); } catch { return fresh(); } }
+
+export const storyOf = s => stories[stageOf(s).id];

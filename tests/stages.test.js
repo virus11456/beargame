@@ -47,3 +47,11 @@ test('stage, unlock and lifetime survive saves; version six saves start at stage
   const m = parseSave(JSON.stringify(six)); assert.equal(m.version, 7); assert.equal(m.stage, 0); assert.equal(m.coins, 77); assert.equal(m.bears.length, 60);
   assert.deepEqual(restore('{"version":7,"stage":9}'), fresh());
 });
+
+test('every stage has an original story with intro lines, a goal and a hook to the next stage', async () => {
+  const { stories } = await import('../src/stages.js'); const { storyOf } = await import('../src/sim.js');
+  assert.equal(stories.length, stages.length);
+  stories.forEach((st, i) => { assert.ok(st.intro.length >= 2); assert.ok(st.goal.length > 0); assert.ok(st.speaker.length > 0); if (i < stories.length - 1) assert.ok(st.cleared.length > 10); });
+  assert.equal(storyOf(fresh(2)).speaker, '哨站守衛');
+  const s = fresh(); s.storySeen = true; assert.equal(parseSave(serialize(s)).storySeen, true); assert.equal(nextStage({ ...s, cleared: true, earned: 5000, stock: 0 }).storySeen, false);
+});

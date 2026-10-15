@@ -5,6 +5,14 @@ export const prey = {
   wolf: { name: '雪狼', hp: 18, speed: 3.6, loot: 2, bite: 3, biteInterval: 1.1, respawn: 6, size: .72 },
   giant: { name: '巨熊', hp: 260, speed: 1.5, loot: 18, bite: 6, biteInterval: 2.2, respawn: 28, size: 1.6 },
 };
+// Every stage tells one chapter of the camp's winter. Lines are original.
+export const stories = [
+  { speaker: '村長', intro: ['暴風雪過後，村子只剩下你這座小營地。', '山下的村民餓著肚子排隊，他們只想要一塊肉。', '先把熊打下來、把肉賣出去——這個冬天得靠你撐過去。'], goal: '籌到過冬的柴火錢', cleared: '柴火買齊了！村長說北邊冰湖的獵物更多，但夜裡有雪狼跟著熊群出沒。' },
+  { speaker: '老獵人', intro: ['冰湖邊的新營地。', '雪狼比熊快得多，牠們會繞到你身後咬人。', '先清掉狼，再慢慢處理熊群——村子需要一座冰窖來保存肉。'], goal: '為村子建一座冰窖', cleared: '冰窖建好了。老獵人壓低聲音：「冰川底下有巨熊，一隻抵六隻，但沒人打得下牠。」' },
+  { speaker: '哨站守衛', intro: ['這裡是村子的最前線。', '巨熊躲在獵群的最後面，皮厚得像冰層；沒升級武器別硬碰。', '雪橇隊等著你的補給，才能翻過冰川。'], goal: '補給全村的雪橇隊', cleared: '雪橇隊出發了。他們在極光下發現了一片沒有人去過的獵場。' },
+  { speaker: '商隊領隊', intro: ['極光下的營地，客人從各個村子慕名而來。', '獵物多、錢也多，但一個人忙不過來。', '把助手、箭塔、收銀員和獵人都請齊，讓營地自己運轉。'], goal: '為全村蓋起長屋', cleared: '長屋落成了。只剩最後一個傳說中的地方：冬天永遠不會結束的永凍要塞。' },
+  { speaker: '你自己', intro: ['沒有人從永凍要塞回來過。', '你帶著整支營地隊伍來到這裡，獵物會一直湧來，沒有終點。', '這一關沒有目標——只要證明，冬天也可以被經營。'], goal: '證明冬天可以被經營', cleared: '' },
+];
 export const stages = [
   { id: 0, name: '雪原營地', subtitle: '第一座營地，只有北極熊', herd: { bear: 24 }, meatPrice: 5, priceScale: 1, goal: 1200, capacity: 30, theme: 'snow' },
   { id: 1, name: '冰湖營地', subtitle: '雪狼加入，動作更快', herd: { bear: 28, wolf: 10 }, meatPrice: 6, priceScale: 1.25, goal: 3000, capacity: 40, theme: 'ice' },

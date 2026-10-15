@@ -76,3 +76,14 @@ h1{font-size:46px;letter-spacing:5px;margin:18px 0}h1 span{display:block;font-si
 .records div{background:#eef2eb;border-radius:10px;padding:6px 8px;font-size:10px;color:#6c8089;text-align:center}.records b{display:block;font-size:15px;color:#35505a;margin-top:1px}
 .records .best{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:center;font-size:10px}
 @media(max-width:600px){.records b{font-size:13px}}
+
+.story-card{width:440px;max-width:100%;background:linear-gradient(180deg,#fffdf4f8,#f3efe2f8);border:1px solid #fff;border-radius:24px;padding:30px 30px 24px;text-align:left;box-shadow:0 30px 100px #173e4b50;color:#35505a}
+.story-card small{font-size:10px;letter-spacing:3px;color:#9a784b}
+.story-card h2{font-size:28px;margin:6px 0 2px;letter-spacing:3px}
+.story-card em{display:block;font-style:normal;font-size:11px;color:#7a8d94;margin-bottom:12px}.story-card em::before{content:"— "}
+.story-card p{font-size:14px;line-height:1.9;margin:0 0 14px;white-space:pre-line}
+.story-goal{display:inline-flex;align-items:center;gap:6px;background:#3fae5b22;color:#2f7e3a;border-radius:10px;padding:6px 12px;font-size:12px;font-weight:800;margin-bottom:18px}
+.story-actions{display:flex;gap:10px}.story-actions button{flex:1;padding:14px 18px;border-radius:14px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:6px}
+#story-go{background:#3fae5b;color:#fff;box-shadow:0 5px 0 #2b7f41}#story-next{background:#f0b23a;color:#4a2f05;box-shadow:0 5px 0 #b7801c}
+@media(max-width:600px){.story-card{padding:22px 20px 18px;border-radius:18px}.story-card h2{font-size:22px}.story-card p{font-size:13px}}
+@media(max-height:520px){.story-card{padding:12px 20px}.story-card h2{font-size:18px;margin:2px 0}.story-card p{font-size:12px;line-height:1.6;margin-bottom:8px}.story-goal{margin-bottom:8px}.story-actions button{padding:8px 12px}}
