@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
+import { createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, meatGeometry, meatMaterial, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
 import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf } from './src/sim.js';
 import { gatesOf, maxCamp, buildingSlots } from './src/camp.js';
 import { themes } from './src/stages.js';
@@ -41,6 +41,9 @@ function flatRing(x, z, color, r, width = .08, opacity = .9) {
 }
 function cone(parent, c, x, y, z, r, h) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), material(c)); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; }
 const dummy = new THREE.Object3D();
+const meatGeo = meatGeometry(), meatMat = meatMaterial();
+function meatInstanced(count, parent = scene) { const mesh = new THREE.InstancedMesh(meatGeo, meatMat, count); mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0; parent.add(mesh); return mesh; }
+function meatMesh(parent, x, y, z, w, h, d) { const m = new THREE.Mesh(meatGeo, meatMat); m.position.set(x, y, z); m.scale.set(w, h, d); m.castShadow = true; parent.add(m); return m; }
 function instanced(geometry, color, count, parent = scene) {
   const mesh = new THREE.InstancedMesh(geometry, material(color), count);
   mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0; parent.add(mesh); return mesh;
@@ -111,7 +114,7 @@ function syncBuildings(animate) {
 const tableGroup = new THREE.Group(); tableGroup.position.set(table.x + .8, 0, table.z); scene.add(tableGroup);
 for (const x of [-.55, .55]) for (const z of [-1.4, 1.4]) box(tableGroup, '#6d4f36', x, .5, z, .18, 1, .18);
 box(tableGroup, '#b8895b', 0, 1.02, 0, 1.7, .16, 3.5); box(tableGroup, '#8f6744', 0, .92, 0, 1.75, .06, 3.55, false);
-const tableMeat = instanced(rounded, '#e0737e', config.stockLimit, tableGroup);
+const tableMeat = meatInstanced(config.stockLimit, tableGroup);
 flatRing(table.x, table.z, '#ffffff', tableRange, .1, .55);
 box(scene, '#4d9ad6', table.x - .4, 1.4, table.z - 2.6, 1.3, .9, .12); box(scene, '#f4f8fa', table.x - .4, 1.4, table.z - 2.55, 1, .6, .05, false); box(scene, '#6e5033', table.x - .4, .5, table.z - 2.6, .12, 1, .12);
 const cashGroup = new THREE.Group(); cashGroup.position.set(cashPoint.x, 0, cashPoint.z); scene.add(cashGroup);
@@ -138,7 +141,7 @@ const weaponPivot = new THREE.Group(); weaponPivot.position.set(0, 1.15, 0); pla
 const sword = new THREE.Group(); sword.position.set(.62, 0, .2); weaponPivot.add(sword);
 let shownWeapon = -1;
 function refreshWeapon() { const lvl = s.upgrades.weapon; if (lvl === shownWeapon) return; shownWeapon = lvl; sword.clear(); const model = createWeapon(lvl); model.scale.setScalar(1.3); sword.add(model); const [a, b] = slashColors[Math.min(lvl, slashColors.length - 1)]; slashMat.color.set(a); slashCore.color.set(b); }
-const packMeat = instanced(rounded, '#e0737e', 420, player); const packCash = instanced(unit, '#5fd45a', 64, player);
+const packMeat = meatInstanced(420, player); const packCash = instanced(unit, '#5fd45a', 64, player);
 const hpBar = new THREE.Group(); hpBar.position.y = 2.75; player.add(hpBar);
 const hpBack = box(hpBar, '#2a2a2a', 0, 0, 0, 1.2, .1, .1, false); const hpFill = box(hpBar, '#5fe05a', 0, .01, .02, 1.2, .12, .1, false);
 let attackVisual = 0, attackAim = 0, visualTime = 0;
@@ -172,23 +175,22 @@ function switchState(next, message) {
   buildBears(); applyTheme(); rebuildCamp(); syncBuildings(false); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
 }
 buildBears();
-const customers = Array.from({ length: customerCount }, (_, i) => { const g = createHuman(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'); g.scale.setScalar(.92); g.userData.meat = rbox(g, '#e0737e', 0, 1.05, .55, .6, .25, .5); g.userData.meat.visible = false; scene.add(g); return g; });
+const customers = Array.from({ length: customerCount }, (_, i) => { const g = createHuman(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'); g.scale.setScalar(.92); g.userData.meat = meatMesh(g, 0, 1.05, .55, .6, .26, .55); g.userData.meat.visible = false; scene.add(g); return g; });
 const helper = createHuman('#5f8a6e', '#efe6d6'); scene.add(helper); helper.visible = s.helper;
 const cashier = createHuman('#3f7fa8', '#f4f1e6'); cashier.position.set(cashPoint.x - 1.3, 0, cashPoint.z - .6); cashier.rotation.y = Math.PI * .75; scene.add(cashier);
 const hunterViews = Array.from({ length: 3 }, (_, i) => { const g = createHuman(['#8a5a3a', '#6f5a7a', '#4f7a5a'][i], '#e9dcc3'); const spear = new THREE.Group(); spear.position.set(.6, 1.1, 0); spear.rotation.x = -1.2; g.add(spear); box(spear, '#6b4b32', 0, 0, .9, .07, .07, 2.4); cone(spear, '#dfe8ec', 0, 0, 2.2, .11, .4).rotation.x = Math.PI / 2; scene.add(g); g.visible = false; return g; });
 let towerView = null, shownTower = -1;
 const towerRing = flatRing(towerPoint.x, towerPoint.z, '#f0c75a', 10, .08, 0);
 function refreshTower() { const lvl = s.upgrades.tower; if (lvl === shownTower) return; shownTower = lvl; if (towerView) scene.remove(towerView); towerView = null; if (lvl > 0) { towerView = createTower(lvl); towerView.position.set(towerPoint.x, 0, towerPoint.z); scene.add(towerView); } const st = towerStats(lvl); towerRing.visible = !!st; if (st) { towerRing.geometry.dispose(); towerRing.geometry = new THREE.RingGeometry(st.range - .1, st.range, 64); towerRing.material.opacity = .35; } }
-const helperLoad = Array.from({ length: assistantCapacity }, (_, i) => rbox(helper, '#e0737e', i % 2 ? -.2 : .2, 1.05 + Math.floor(i / 2) * .19, -.62, .42, .17, .5));
+const helperLoad = Array.from({ length: assistantCapacity }, (_, i) => meatMesh(helper, i % 2 ? -.2 : .2, 1.05 + Math.floor(i / 2) * .19, -.62, .44, .17, .5));
 const helperLabel = label('', -6, 2.9, 7); helperLabel.el.innerHTML = '搬肉助手';
 
 // ---------- loot, transfers, effects, snow ----------
-const dropMesh = instanced(rounded, '#e0737e', config.dropLimit + 80);
-const boneMesh = instanced(smooth, '#fff0f2', config.dropLimit + 80); boneMesh.castShadow = false;
+const dropMesh = meatInstanced(config.dropLimit + 80);
 const transfers = [];
 function transfer(kind, from, to, speed = 2.6) {
   if (transfers.length >= 80) return;
-  const mesh = kind === 'bill' ? box(scene, '#5fd45a', from.x, 1.4, from.z, .5, .08, .3) : kind === 'arrow' ? box(scene, '#6b4b32', from.x, 3.2, from.z, .07, .07, .9, false) : rbox(scene, '#e0737e', from.x, 1.4, from.z, .55, .24, .48);
+  const mesh = kind === 'bill' ? box(scene, '#5fd45a', from.x, 1.4, from.z, .5, .08, .3) : kind === 'arrow' ? box(scene, '#6b4b32', from.x, 3.2, from.z, .07, .07, .9, false) : meatMesh(scene, from.x, 1.4, from.z, .6, .26, .55);
   if (kind === 'arrow') mesh.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
   transfers.push({ kind, mesh, from: new THREE.Vector3(from.x, 1.3, from.z), to: new THREE.Vector3(to.x, 1.3, to.z), t: 0, speed });
 }
@@ -366,7 +368,7 @@ function draw(t) {
   slashGroup.scale.setScalar(attackVisual > 0 ? .7 + swing * .4 : 1); slashGroup.visible = attackVisual > 0;
   hpBar.visible = s.hp < 100; hpFill.scale.x = 1.2 * Math.max(0, s.hp) / 100; hpFill.position.x = -(1.2 - hpFill.scale.x) / 2; hpBar.rotation.y = -player.rotation.y + Math.PI / 4;
   // back stacks: meat column and carried cash
-  for (let i = 0; i < s.meat && i < 420; i++) place(packMeat, i, i % 2 ? -.23 : .23, 1.02 + Math.floor(i / 2) * .17, -.62, .44, .16, .5, Math.sin(i * .7) * .08);
+  for (let i = 0; i < s.meat && i < 420; i++) place(packMeat, i, i % 2 ? -.23 : .23, 1.02 + Math.floor(i / 2) * .17, -.62, .46, .17, .55, Math.sin(i * .7) * .08 + (i % 2 ? Math.PI : 0));
   packMeat.count = Math.min(420, s.meat); packMeat.instanceMatrix.needsUpdate = true;
   const bills = Math.min(64, Math.ceil(s.coins / 20));
   for (let i = 0; i < bills; i++) place(packCash, i, i % 2 ? -.2 : .2, 1.02 + Math.floor(i / 2) * .075, -1.05, .42, .07, .3, Math.sin(i * 1.3) * .1);
@@ -402,12 +404,12 @@ function draw(t) {
   for (let i = 0; i < shown; i++) {
     const d = s.drops[i]; const k = d.born === undefined ? 1 : Math.min(1, (s.time - d.born) / .45);
     const x = d.ox === undefined ? d.x : d.ox + (d.x - d.ox) * k, z = d.oz === undefined ? d.z : d.oz + (d.z - d.oz) * k, y = .2 + Math.sin(k * Math.PI) * 1.4, sc = .5 + .5 * k;
-    place(dropMesh, i, x, y, z, .62 * sc, .26 * sc, .5 * sc, i * 1.3 + (1 - k) * 6); place(boneMesh, i, x + Math.cos(i * 1.3) * .12, y + .16, z - Math.sin(i * 1.3) * .12, .13 * sc, .07 * sc, .1 * sc);
+    place(dropMesh, i, x, y, z, .7 * sc, .3 * sc, .62 * sc, i * 1.3 + (1 - k) * 6);
   }
-  dropMesh.count = boneMesh.count = shown; dropMesh.instanceMatrix.needsUpdate = boneMesh.instanceMatrix.needsUpdate = true;
+  dropMesh.count = shown; dropMesh.instanceMatrix.needsUpdate = true;
 
   // table stock and cash pile
-  for (let i = 0; i < s.stock; i++) place(tableMeat, i, (i % 2 ? -.38 : .38), 1.2 + Math.floor(i / 10) * .22, -1.3 + Math.floor((i % 10) / 2) * .65, .68, .2, .55, (i % 3) * .06);
+  for (let i = 0; i < s.stock; i++) place(tableMeat, i, (i % 2 ? -.38 : .38), 1.2 + Math.floor(i / 10) * .22, -1.3 + Math.floor((i % 10) / 2) * .65, .7, .22, .6, (i % 3) * .06 + (i % 2 ? Math.PI : 0));
   tableMeat.count = Math.min(config.stockLimit, s.stock); tableMeat.instanceMatrix.needsUpdate = true;
   const billCount = Math.min(180, Math.ceil(s.cash / 5));
   for (let i = 0; i < billCount; i++) place(cashPile, i, -.55 + (i % 3) * .55, .22 + Math.floor(i / 6) * .075, (Math.floor(i / 3) % 2 ? .32 : -.32), .5, .07, .32, Math.sin(i * 2.1) * .12);

@@ -191,7 +191,7 @@ export function createBuilding(type) {
   } else if (type === 'storage') {
     for (const x of [-1.2, 1.2]) for (const z of [-.7, .7]) part(g, '#8a6a4e', x, .9, z, .16, 1.8, .16, unit);
     part(g, '#b3885a', 0, 1.85, 0, 2.9, .12, 1.9, unit); part(g, '#8a6a4e', 0, 1.6, 0, 2.6, .08, .08, unit, false);
-    for (let i = 0; i < 4; i++) part(g, '#e0737e', -.9 + i * .6, 1.15, 0, .4, .55, .3, rounded);
+    for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(meatGeometry(), meatMaterial()); m.position.set(-.9 + i * .6, 1.15, 0); m.scale.set(.45, .55, .35); m.rotation.x = Math.PI / 2; m.castShadow = true; g.add(m); }
     part(g, '#c9a06a', -.8, .35, 1.1, .8, .7, .7, unit); part(g, '#c9a06a', .3, .3, 1.15, .7, .6, .6, unit); part(g, '#d9b47a', -.8, .72, 1.1, .85, .06, .75, unit, false);
   } else if (type === 'sled') {
     for (const x of [-1.3, 1.3]) part(g, '#8a6a4e', x, 1, -1, .16, 2, .16, unit);
@@ -201,7 +201,7 @@ export function createBuilding(type) {
   } else if (type === 'hut') {
     cabin(g, 2.6, 1.9, 2.2, '#c99a6a', '#8d4b3a'); part(g, '#5a3f2a', 0, .7, 1.12, .7, 1.3, .06, unit, false); part(g, '#9fd3ec', .8, 1.2, 1.12, .55, .45, .05, unit, false);
     part(g, '#b3885a', 2.1, .55, .4, 1.1, .5, .8, unit); for (const z of [-.1, .9]) { const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.28, .28, .12, 10), material('#5a3f2a')); wheel.rotation.z = Math.PI / 2; wheel.position.set(2.1, .28, z); g.add(wheel); }
-    part(g, '#e0737e', 2.1, .95, .4, .5, .3, .5, rounded);
+    { const m = new THREE.Mesh(meatGeometry(), meatMaterial()); m.position.set(2.1, .95, .4); m.scale.set(.55, .28, .5); m.castShadow = true; g.add(m); }
   } else if (type === 'booth') {
     part(g, '#3f7fa8', 0, .55, 0, 2.4, 1.1, 1.2, unit); part(g, '#f4f1e6', 0, 1.15, 0, 2.6, .12, 1.4, unit, false);
     for (const x of [-1.1, 1.1]) part(g, '#8a6a4e', x, 1.5, -.4, .12, 1.4, .12, unit);
@@ -216,3 +216,31 @@ export function createBuilding(type) {
   g.userData.type = type; return g;
 }
 function cone(parent, c, x, y, z, r, h) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), material(c)); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; }
+
+// A cut of meat as one merged geometry with vertex colours so it can be
+// instanced by the thousand: red muscle, a strip of fat, marbling and a
+// bone with a knuckle poking out of one end. Fits a unit box.
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+function tinted(geometry, hex, transform) {
+  const g = geometry.index ? geometry.toNonIndexed() : geometry.clone(); if (transform) g.applyMatrix4(transform);
+  const c = new THREE.Color(hex), n = g.attributes.position.count, colors = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3)); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k); return g;
+}
+const M = (x, y, z, sx, sy, sz, ry = 0, rz = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, rz)), new THREE.Vector3(sx, sy, sz));
+export function meatGeometry() {
+  const body = new RoundedBoxGeometry(1, 1, 1, 2, .22), slab = new THREE.BoxGeometry(1, 1, 1), tube = new THREE.CylinderGeometry(.5, .5, 1, 8), ball = new THREE.SphereGeometry(.5, 8, 6);
+  const parts = [
+    tinted(body, '#cf4a58', M(-.08, 0, -.05, .8, 1, .88)),
+    tinted(slab, '#f5e6d6', M(.36, 0, -.05, .14, .96, .84)),
+    tinted(slab, '#f0a3ab', M(-.2, .5, .1, .5, .05, .09, .5)),
+    tinted(slab, '#f0a3ab', M(0, .5, -.28, .4, .05, .08, -.3)),
+    tinted(tube, '#fbf4ea', M(-.1, .05, .62, .34, .5, .34, 0, Math.PI / 2).multiply(new THREE.Matrix4().makeRotationX(0))),
+    tinted(ball, '#fbf4ea', M(-.24, .05, .86, .36, .36, .36)),
+    tinted(ball, '#fbf4ea', M(.04, .05, .86, .36, .36, .36)),
+  ];
+  // the bone cylinder is built along Y; lay it along Z
+  parts[4] = tinted(tube, '#fbf4ea', new THREE.Matrix4().compose(new THREE.Vector3(-.1, .05, .62), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)), new THREE.Vector3(.34, .5, .34)));
+  const merged = mergeGeometries(parts, false); merged.computeVertexNormals(); return merged;
+}
+export const meatMaterial = () => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72 });
