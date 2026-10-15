@@ -14,3 +14,7 @@
 #open-shop{background:#285a60;border-color:#6d9996;box-shadow:0 5px 0 #183c44}.inventory{border:1px solid #fff8dd;box-shadow:0 4px 18px #234b5412}
 #joystick{border:2px solid #fff9d788;background:#294e5724}#stick{background:#fff4d9d9;box-shadow:0 3px 8px #294e5733}
 @media(max-width:600px){.customer-label{font-size:8px;padding:2px 4px}.mission{top:82px;width:225px;padding:12px 14px}.build-label{max-width:120px}.build-label small:first-of-type{display:none}}
+
+.top-right #restart{width:auto;padding:0 12px;white-space:nowrap;font-size:13px;background:#fff4d6;border:1px solid #e7c88e}@media(max-width:600px){.top-right{gap:5px}.top-right #restart{padding:0 8px;font-size:11px}.money{min-width:70px;padding:10px}}
+
+#development{font-size:10px;color:#88704c;margin:0 0 8px}

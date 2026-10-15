@@ -7,9 +7,9 @@ const run=(s,seconds)=>{for(let i=0;i<seconds*30;i++)step(s,1/30);};
 test('ground construction charges once until player leaves',()=>{
  const s=fresh(),pad=buildPads.find(p=>p.id==='bag');s.x=pad.x;s.z=pad.z;
  run(s,3);assert.equal(s.upgrades.bag,0);s.coins=500;
- run(s,3);assert.equal(s.upgrades.bag,1);assert.equal(s.coins,452);
- run(s,3);assert.equal(s.coins,452);s.z=7;run(s,.1);s.z=pad.z;
- run(s,2);assert.equal(s.upgrades.bag,2);assert.equal(s.coins,356);
+ run(s,3);assert.equal(s.upgrades.bag,1);assert.equal(s.coins,404);
+ run(s,3);assert.equal(s.coins,404);s.z=7;run(s,.1);s.z=pad.z;
+ run(s,2);assert.equal(s.upgrades.bag,2);assert.equal(s.coins,212);
 });
 test('leaving a construction pad cancels partial progress',()=>{
  const s=fresh();s.coins=500;s.x=-8;s.z=10.5;run(s,1);s.z=7;run(s,.1);s.z=10.5;run(s,1);
@@ -45,3 +45,8 @@ test('weapon progression enables ranged hits outside spear reach',()=>{
  }
  assert.equal(weaponStats(4).tier,'crossbow');assert.ok(weaponStats(4).interval<weaponStats(2).interval);
 });
+
+test('fresh camp has no assistant and hiring requires development milestones',async()=>{const {buy}=await import('../src/sim.js');const s=fresh();assert.equal(s.helper,false);s.coins=2000;assert.equal(buy(s,'helper'),false);s.expanded=true;s.sold=19;assert.equal(buy(s,'helper'),false);s.sold=20;assert.equal(buy(s,'helper'),true);assert.equal(s.coins,1040);});
+test('expansion opens usable eastern ground and preserves it in saves',async()=>{const {buy}=await import('../src/sim.js');const s=fresh();s.x=14;step(s,1,{x:1,z:0});assert.equal(s.x,14);s.coins=720;assert.equal(buy(s,'expand'),true);step(s,1,{x:1,z:0});assert.equal(s.x,20);assert.equal(parseSave(serialize(s)).x,20);});
+test('bears patrol even when the player remains in camp',()=>{const s=fresh();const before=s.bears.map(b=>({x:b.x,z:b.z}));run(s,5);assert.ok(s.bears.slice(0,6).every((b,i)=>Math.hypot(b.x-before[i].x,b.z-before[i].z)>.1));assert.ok(s.bears.slice(0,6).every(b=>Math.abs(b.x-b.hx)<=1.8&&Math.abs(b.z-b.hz)<=1.3));assert.equal(s.hp,100);});
+test('expansion requires multiple hunts rather than two early kills',async()=>{const {price}=await import('../src/sim.js');const s=fresh();assert.equal(Math.ceil(price(s,'expand')/(config.lootPerBear*config.sale)),10);});
