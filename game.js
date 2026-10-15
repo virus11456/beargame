@@ -261,6 +261,12 @@ function endJoy(e) {
   clearJoy(); if (tap) walkTo(e.clientX, e.clientY);
 }
 $('game').onpointerup = endJoy; $('game').onpointercancel = endJoy; $('game').onlostpointercapture = e => { if (e.pointerId === joyId) clearJoy(); };
+// iOS Safari still allows pinch and double-tap zoom unless the gestures are cancelled.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, e => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.scale !== undefined && e.scale !== 1) e.preventDefault(); }, { passive: false });
+let lastTouchEnd = 0; document.addEventListener('touchend', e => { const now = performance.now(); if (now - lastTouchEnd < 300 && e.target === $('game')) e.preventDefault(); lastTouchEnd = now; }, { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+if (window.visualViewport) { let zoomWarned = 0; visualViewport.addEventListener('resize', () => { if (visualViewport.scale > 1.05 && performance.now() - zoomWarned > 4000) { zoomWarned = performance.now(); toast('頁面被放大了，請雙指捏合縮回原尺寸'); } }); }
 addEventListener('keydown', e => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault(); keys[e.key.toLowerCase()] = true; target = null; if (e.key === 'Escape') stop(); });
 addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 addEventListener('blur', () => { if (running) stop(); }); document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); }); addEventListener('pagehide', save);
