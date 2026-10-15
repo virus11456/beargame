@@ -4,7 +4,7 @@
 // collect the cash → stand on ground pads to buy upgrades and expand.
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
 import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter } from './progression.js';
-import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside } from './camp.js';
+import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside, pushOut } from './camp.js';
 import { stages, stories, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
 export { price, level, canHire, unlocked, automation, fullyAutomated, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
 
@@ -77,7 +77,7 @@ export function buy(s, key) {
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 function kill(s, b, events) {
   const kind = preyOf(s, b); s.kills++; b.respawn = kind.respawn;
-  for (let j = 0; j < kind.loot; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08), born: s.time, ox: b.x, oz: b.z });
+  for (let j = 0; j < kind.loot; j++) s.drops.push({ ...pushOut({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08) }), born: s.time, ox: b.x, oz: b.z });
   events.push({ type: 'kill', id: b.id, x: b.x, z: b.z, kind: kindOf(stageOf(s), b.id), from: events.length ? events[events.length - 1].from : undefined });
 }
 

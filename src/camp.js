@@ -22,7 +22,7 @@ export function fenceStep(from, to) {
 }
 
 // Does the segment a→b pass through the camp rectangle (with a small margin)?
-export function crossesCamp(a, b, margin = .6) {
+export function crossesCamp(a, b, margin = 0) {
   const minX = camp.minX - margin, maxX = camp.maxX + margin, minZ = camp.minZ - margin, maxZ = camp.maxZ + margin;
   let t0 = 0, t1 = 1; const dx = b.x - a.x, dz = b.z - a.z;
   for (const [p, q] of [[-dx, a.x - minX], [dx, maxX - a.x], [-dz, a.z - minZ], [dz, maxZ - a.z]]) {
@@ -34,6 +34,7 @@ export function crossesCamp(a, b, margin = .6) {
 }
 const corners = [[camp.minX - 1.4, camp.minZ - 1.4], [camp.maxX + 1.4, camp.minZ - 1.4], [camp.minX - 1.4, camp.maxZ + 1.4], [camp.maxX + 1.4, camp.maxZ + 1.4]].map(([x, z]) => ({ x, z }));
 const outsideOf = g => ({ x: g.x, z: g.z + (g.z < 0 ? -.9 : .9) });
+const insideOf = g => ({ x: g.x, z: g.z + (g.z < 0 ? .9 : -.9) });
 // Length of an outdoor walk that goes around the camp when needed: shortest
 // path over the start, the goal and the four fence corners.
 function outdoorCost(a, b) {
@@ -57,7 +58,7 @@ export function routeTarget(from, target) {
   if (!inF && inT) {
     const via = gates.map(g => ({ g, cost: outdoorCost(from, outsideOf(g)) + Math.hypot(target.x - g.x, target.z - g.z) })).sort((a, b) => a.cost - b.cost)[0].g;
     const step = routeTarget(from, outsideOf(via));
-    return Math.hypot(from.x - via.x, from.z - via.z) > 1.2 ? step : target;
+    return Math.hypot(from.x - via.x, from.z - via.z) > 1.2 ? step : insideOf(via);
   }
   if (!inF && crossesCamp(from, target)) {
     const c = corners.filter(c => !crossesCamp(from, c)).map(c => ({ c, cost: Math.hypot(from.x - c.x, from.z - c.z) + outdoorCost(c, target) })).sort((a, b) => a.cost - b.cost)[0];
@@ -66,6 +67,15 @@ export function routeTarget(from, target) {
   return target;
 }
 
+// Push a point clear of the fence band so loot never lands where a path
+// would have to hug or cross the fence.
+export function pushOut(p, margin = .9) {
+  const minX = camp.minX - margin, maxX = camp.maxX + margin, minZ = camp.minZ - margin, maxZ = camp.maxZ + margin;
+  if (p.x < minX || p.x > maxX || p.z < minZ || p.z > maxZ) return p;
+  const d = [p.x - minX, maxX - p.x, p.z - minZ, maxZ - p.z], m = Math.min(...d);
+  if (m === d[0]) p.x = minX; else if (m === d[1]) p.x = maxX; else if (m === d[2]) p.z = minZ; else p.z = maxZ;
+  return p;
+}
 // Keep a creature outside the fence (used for bears that wander too close).
 export function keepOutside(p) {
   if (!inCamp(p)) return;

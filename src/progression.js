@@ -82,7 +82,12 @@ export function updateAssistant(s, dt, table, stockLimit, events) {
   if (!s.helper) return;
   const a = s.assistant;
   a.timer = Math.max(0, a.timer - dt);
-  const loot = s.drops.sort((x, y) => dist(a, x) - dist(a, y))[0];
+  // Watchdog: if the helper makes no progress for a while, skip that piece for a bit.
+  const moved = a.lastX === undefined ? 1 : Math.hypot(a.x - a.lastX, a.z - a.lastZ);
+  a.lastX = a.x; a.lastZ = a.z; a.stuck = moved < .01 && a.phase !== 'idle' ? (a.stuck || 0) + dt : 0;
+  if (a.avoid && s.time > a.avoid.until) a.avoid = undefined;
+  const loot = s.drops.filter(d => !(a.avoid && Math.hypot(d.x - a.avoid.x, d.z - a.avoid.z) < 2)).sort((x, y) => dist(a, x) - dist(a, y))[0];
+  if (a.stuck > 2.5 && loot && a.phase === 'collect') { a.avoid = { x: loot.x, z: loot.z, until: s.time + 10 }; a.stuck = 0; return; }
   if (a.load >= assistantCapacity || a.phase === 'return' || (!loot && a.load > 0)) {
     a.phase = 'return';
     if (move(a, table, dt, 5) && a.timer === 0 && s.stock < stockLimit && a.load > 0) {

@@ -54,3 +54,13 @@ test('prey gathers in three packs around the camp and leaves the customer side c
   assert.equal(gates.length, 2); assert.equal(crossesCamp({ x: 3.6, z: -7 }, { x: -2, z: 17 }), true);
   const via = routeTarget({ x: 0, z: 0 }, { x: -2, z: 17 }); assert.ok(Math.hypot(via.x - gates[1].x, via.z - gates[1].z) < .01, 'south target uses the south gate');
 });
+
+test('helper collects meat lying right beside the fence and brings it home through a gate', () => {
+  for (const [x, z] of [[-9.3, 0], [-9.8, 2], [0, -6.2], [5, 6.9], [9.4, -6.4], [12, -12]]) {
+    const s = fresh(); s.helper = true; s.x = 0; s.z = 0; s.drops = Array.from({ length: 6 }, (_, i) => ({ x: x + i * .1, z }));
+    for (let i = 0; i < 45 * 30; i++) step(s, 1 / 30);
+    assert.equal(s.drops.length, 0, `drops at ${x},${z}`); assert.equal(s.stock + s.sold, 6, `delivered from ${x},${z}`); assert.equal(s.assistant.load, 0);
+  }
+  const k = fresh(); k.x = 0; k.z = -20; const b = k.bears[0]; b.x = 2; b.z = camp.minZ - .8; b.hp = 1; k.upgrades.weapon = 5; k.x = b.x; k.z = b.z - 1; step(k, 1 / 30);
+  assert.ok(k.drops.every(d => !inCamp(d) && (d.z <= camp.minZ - .9 || d.x <= camp.minX - .9 || d.x >= camp.maxX + .9 || d.z >= camp.maxZ + .9)), 'loot pushed clear of the fence band');
+});
