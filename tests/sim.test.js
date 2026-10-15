@@ -98,3 +98,20 @@ test('a bear that the player walks away from stops chasing and roams near home',
   wait(s, 5); assert.ok(Math.abs(b.x - b.hx) < 2 && Math.abs(b.z - b.hz) < 2);
   assert.equal(s.hp, 100);
 });
+
+test('the fence blocks the player everywhere except the north gate', async () => {
+  const { camp, gate, routeTarget } = await import('../src/camp.js');
+  const s = fresh(); s.x = 0; s.z = 5; wait(s, 2, { x: 0, z: 1 }); assert.ok(s.z <= camp.maxZ, 'south fence holds');
+  s.x = -8; s.z = 0; wait(s, 2, { x: -1, z: 0 }); assert.ok(s.x >= camp.minX, 'west fence holds');
+  s.x = -5; s.z = -2; wait(s, 2, { x: 0, z: -1 }); assert.ok(s.z >= camp.minZ, 'north fence holds away from the gate');
+  s.x = gate.x; s.z = -2; wait(s, 2, { x: 0, z: -1 }); assert.ok(s.z < camp.minZ - 3, 'gate lets the player out');
+  wait(s, 2, { x: 0, z: 1 }); assert.ok(inCamp(s), 'and back in');
+  assert.deepEqual(routeTarget({ x: 0, z: 0 }, { x: 0, z: -20 }), { x: gate.x, z: gate.z });
+  assert.deepEqual(routeTarget({ x: 0, z: 0 }, { x: 5, z: 3 }), { x: 5, z: 3 });
+});
+
+test('bears never end up inside the camp', () => {
+  const s = fresh(); s.x = 0; s.z = -8; s.bears[0].x = 1; s.bears[0].z = 1; s.bears[0].hx = 1; s.bears[0].hz = 1;
+  step(s, 1 / 30); assert.equal(inCamp(s.bears[0]), false);
+  wait(s, 3); assert.ok(s.bears.every(b => !inCamp(b)));
+});

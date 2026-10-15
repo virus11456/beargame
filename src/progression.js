@@ -1,3 +1,4 @@
+import { routeTarget } from './camp.js';
 // Ground upgrade pads. Standing on a pad drains carried cash into it bit by bit,
 // exactly like the reference playable: the price counts down and the upgrade
 // applies when it reaches zero. Partial payments stay on the pad.
@@ -32,12 +33,13 @@ export function weaponStats(lvl) {
   };
 }
 
-export const newAssistant = () => ({ x: -6, z: 7, load: 0, phase: 'idle', timer: 0 });
+export const newAssistant = () => ({ x: -6, z: 5.5, load: 0, phase: 'idle', timer: 0 });
 export const assistantCapacity = 15;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
-function move(worker, target, dt, speed) {
+function move(worker, goal, dt, speed) {
+  const target = routeTarget(worker, goal);
   const d = dist(worker, target);
-  if (d <= .4) return true;
+  if (d <= .4) return target === goal;
   const stride = Math.min(speed * dt, d);
   worker.x += (target.x - worker.x) / d * stride;
   worker.z += (target.z - worker.z) / d * stride;
@@ -62,5 +64,5 @@ export function updateAssistant(s, dt, table, stockLimit, events) {
       const i = s.drops.indexOf(loot);
       if (i >= 0) { s.drops.splice(i, 1); a.load++; a.timer = .05; events.push({ type: 'pickup', actor: 'assistant', from: { x: loot.x, z: loot.z }, to: { x: a.x, z: a.z } }); }
     }
-  } else { a.phase = 'idle'; move(a, { x: -6, z: 7 }, dt, 5); }
+  } else { a.phase = 'idle'; move(a, { x: -6, z: 5.5 }, dt, 5); }
 }

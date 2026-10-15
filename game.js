@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createHuman, animateHuman, createBear, createTree, part, material, rounded, unit, smooth } from './src/art.js';
-import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, herdSize, pads, price, level, canHire, weaponStats } from './src/sim.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget } from './src/sim.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
 import { nextAction, padLabel } from './src/guide.js';
 import { loadGame, saveGame, resetGame } from './src/storage.js';
@@ -66,7 +66,7 @@ for (let i = 0; i < 70; i++) {
 // ---------- fence with gate panels ----------
 const postGeo = new THREE.BoxGeometry(.18, 1.15, .18), railGeo = new THREE.BoxGeometry(1, .1, .08);
 const posts = [], rails = [];
-const opening = x => x > 1.3 && x < 5.9;
+const opening = x => Math.abs(x - gate.x) < gate.halfWidth;
 function fenceRun(x0, z0, x1, z1, skip) {
   const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / .7), dx = (x1 - x0) / n, dz = (z1 - z0) / n, ry = Math.atan2(dx, dz) + Math.PI / 2;
   for (let i = 0; i <= n; i++) { const x = x0 + dx * i, z = z0 + dz * i; if (skip && skip(x, z)) continue; posts.push({ x, z, ry }); if (i < n && !(skip && skip(x + dx, z + dz))) rails.push({ x: x + dx / 2, z: z + dz / 2, ry, len: Math.hypot(dx, dz) }); }
@@ -85,7 +85,7 @@ function gatePanel(x, z, ry) {
   box(g, '#a93523', 0, .97, -.05, 1.9, 1.5, .04, false);
   return g;
 }
-gatePanel(.2, fz0, 0); gatePanel(7, fz0, 0); gatePanel(fx0, 3.5, Math.PI / 2);
+gatePanel(gate.x - gate.halfWidth - 1.1, fz0, 0); gatePanel(gate.x + gate.halfWidth + 1.1, fz0, 0); gatePanel(fx0, 3.5, Math.PI / 2);
 
 // ---------- table, cash pile, pads, sign ----------
 const tableGroup = new THREE.Group(); tableGroup.position.set(table.x + .8, 0, table.z); scene.add(tableGroup);
@@ -236,7 +236,7 @@ function draw(t) {
     acc += dt;
     while (acc >= 1 / 30) {
       let x = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0) + joy.x, z = (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0) + joy.z;
-      if (target && Math.hypot(x, z) < .1) { const d = Math.hypot(target.x - s.x, target.z - s.z); if (d > .3) { x = (target.x - s.x) / d; z = (target.z - s.z) / d; } else target = null; }
+      if (target && Math.hypot(x, z) < .1) { const goal = routeTarget(s, target); const d = Math.hypot(goal.x - s.x, goal.z - s.z); if (Math.hypot(target.x - s.x, target.z - s.z) <= .3) target = null; else if (d > .05) { x = (goal.x - s.x) / d; z = (goal.z - s.z) / d; } }
       const events = step(s, 1 / 30, { x, z });
       for (const e of events) {
         if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; beep(220, .12, 'sawtooth', .025); }

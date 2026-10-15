@@ -4,7 +4,8 @@
 // collect the cash → stand on ground pads to buy upgrades and expand.
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
 import { pads, padRadius, price, level, maxLevel, canHire, apply, weaponStats, newAssistant, assistantCapacity, updateAssistant } from './progression.js';
-export { price, level, canHire, pads, weaponStats };
+import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside } from './camp.js';
+export { price, level, canHire, pads, weaponStats, camp, gate, inCamp, routeTarget };
 
 export const config = {
   speed: 6.2, capacity: 30, capacityPerLevel: 20, meatPrice: 5,
@@ -13,7 +14,6 @@ export const config = {
   bearSpeed: 2.3, aggro: 6, biteRange: 1.45, biteDamage: 2, biteInterval: 1.5, maxBiters: 3,
   regenCamp: 10, regenField: 1.2,
 };
-export const camp = { minX: -9, maxX: 9, minZ: -6, maxZ: 6.5 };
 export const table = { x: 7.2, z: 3.6 };
 export const tableRange = 2.4;
 export const cashPoint = { x: 4.4, z: 5.2 };
@@ -23,14 +23,13 @@ export const herdSize = s => Math.min(config.maxBears, config.herd + s.upgrades.
 export const worldBounds = s => { const grow = s.upgrades.herd * 4; return { minX: -27 - grow, maxX: 27 + grow, minZ: -38 - grow, maxZ: 10 }; };
 export const capacity = s => config.capacity + s.upgrades.bag * config.capacityPerLevel;
 export const moveSpeed = s => config.speed * (1 + s.upgrades.speed * .15);
-export const inCamp = p => p.x >= camp.minX && p.x <= camp.maxX && p.z >= camp.minZ && p.z <= camp.maxZ;
 
 // Deterministic pseudo-random so a fresh camp is identical in every test.
 const noise = n => { const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
 function bear(i) {
   const ring = Math.floor(i / 8), slot = i % 8, angle = slot / 8 * Math.PI * 2 + ring * .4 + noise(i) * .6;
   const radius = 2.5 + ring * 2.6 + noise(i + 100) * 1.5;
-  const hx = Math.cos(angle) * radius * 1.4, hz = -17 + Math.sin(angle) * radius;
+  const hx = Math.cos(angle) * radius * 1.4, hz = Math.min(camp.minZ - 3.5, -17 + Math.sin(angle) * radius);
   return { id: i, x: hx, z: hz, hx, hz, hp: config.bearHp, cool: 1 + noise(i + 7), respawn: 0 };
 }
 export function fresh() {
@@ -63,8 +62,9 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
   s.time += dt;
   const len = Math.max(1, Math.hypot(input.x, input.z));
   if (Math.hypot(input.x, input.z) > .05) s.face = Math.atan2(input.x, input.z);
-  s.x = Math.max(bounds.minX, Math.min(bounds.maxX, s.x + input.x / len * moveSpeed(s) * dt));
-  s.z = Math.max(bounds.minZ, Math.min(bounds.maxZ, s.z + input.z / len * moveSpeed(s) * dt));
+  const moved = fenceStep(s, { x: s.x + input.x / len * moveSpeed(s) * dt, z: s.z + input.z / len * moveSpeed(s) * dt });
+  s.x = Math.max(bounds.minX, Math.min(bounds.maxX, moved.x));
+  s.z = Math.max(bounds.minZ, Math.min(bounds.maxZ, moved.z));
   s.attack -= dt;
   s.hp = Math.min(100, s.hp + (inCamp(s) ? config.regenCamp : config.regenField) * dt);
 
@@ -105,6 +105,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
       const home = distance(roam, b);
       if (home > .08) { const stride = Math.min(home, dt * .9); b.x += (roam.x - b.x) / home * stride; b.z += (roam.z - b.z) / home * stride; }
     }
+    keepOutside(b);
   }
   if (s.hp <= 0) { s.x = 0; s.z = 2; s.hp = 100; events.push({ type: 'rescue' }); }
 
