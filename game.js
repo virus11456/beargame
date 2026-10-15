@@ -16,12 +16,13 @@ const scene = new THREE.Scene(); scene.background = new THREE.Color('#e4edf1'); 
 let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: true, powerPreference: 'high-performance' }); }
 catch { $('save-note').textContent = '無法啟動 WebGL，請使用支援 WebGL 2 的瀏覽器。'; $('start').disabled = true; throw Error('WebGL unavailable'); }
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const coarse = matchMedia('(pointer:coarse)').matches, maxRatio = coarse ? 1.5 : 1.8;
+renderer.setPixelRatio(Math.min(devicePixelRatio, maxRatio)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08;
 const camera = new THREE.OrthographicCamera(-18, 18, 18, -18, .1, 160);
 const follow = new THREE.Vector3(s.x, 0, s.z), cameraOffset = new THREE.Vector3(26, 34, 26);
 scene.add(new THREE.HemisphereLight(0xf6fbff, 0x9fb4b9, 1.6));
-const sun = new THREE.DirectionalLight(0xfff1dc, 2); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+const sun = new THREE.DirectionalLight(0xfff1dc, 2); sun.castShadow = true; sun.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
 Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 }); sun.shadow.normalBias = .05; sun.shadow.bias = -.0002;
 scene.add(sun, sun.target);
 
@@ -161,7 +162,7 @@ function stop() { running = false; keys = {}; clearJoy(); target = null; $('menu
 $('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { } running = true; $('menu').hidden = true; };
 $('pause').onclick = stop;
 $('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; };
-$('quality').onclick = () => { low = !low; renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.8)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; };
+$('quality').onclick = () => { low = !low; renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; };
 function restart() {
   if (!confirm('確定清除目前的營地進度，重新開始？')) return;
   s = fresh(); target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
@@ -174,18 +175,38 @@ $('objective').onclick = () => { if (!running) return; const a = nextAction(s); 
 
 // ---------- input ----------
 const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), point = new THREE.Vector3();
-$('game').onpointerdown = e => { if (!running) return; ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), camera); if (ray.ray.intersectPlane(plane, point)) { const b = worldBounds(s); target = { x: Math.max(b.minX, Math.min(b.maxX, point.x)), z: Math.max(b.minZ, Math.min(b.maxZ, point.z)) }; } };
-let joyId = null;
-function moveJoy(e) { const r = $('joystick').getBoundingClientRect(), x = e.clientX - r.left - r.width / 2, z = e.clientY - r.top - r.height / 2, d = Math.max(40, Math.hypot(x, z)); joy = { x: x / d, z: z / d }; $('stick').style.transform = `translate(${joy.x * 32}px,${joy.z * 32}px)`; target = null; }
-$('joystick').onpointerdown = e => { if (!running) return; joyId = e.pointerId; $('joystick').setPointerCapture(e.pointerId); moveJoy(e); };
-$('joystick').onpointermove = e => { if (e.pointerId === joyId) moveJoy(e); };
-function clearJoy() { joyId = null; joy = { x: 0, z: 0 }; $('stick').style.transform = ''; }
-$('joystick').onpointerup = clearJoy; $('joystick').onpointercancel = clearJoy; $('joystick').onlostpointercapture = clearJoy;
+function walkTo(clientX, clientY) {
+  ray.setFromCamera(new THREE.Vector2(clientX / innerWidth * 2 - 1, -clientY / innerHeight * 2 + 1), camera);
+  if (ray.ray.intersectPlane(plane, point)) { const b = worldBounds(s); target = { x: Math.max(b.minX, Math.min(b.maxX, point.x)), z: Math.max(b.minZ, Math.min(b.maxZ, point.z)) }; }
+}
+let joyId = null, joyOrigin = null, joyStart = 0, joyMoved = false;
+const joyEl = $('joystick'), stickEl = $('stick'), joyRadius = 46;
+function showJoy(x, y) { document.body.classList.add('touched'); joyOrigin = { x, y }; joyEl.style.left = x - 59 + 'px'; joyEl.style.top = y - 59 + 'px'; joyEl.classList.add('active'); stickEl.style.transform = ''; }
+function moveJoy(e) {
+  const dx = e.clientX - joyOrigin.x, dy = e.clientY - joyOrigin.y, d = Math.hypot(dx, dy);
+  if (d > 10) joyMoved = true;
+  const k = Math.min(1, d / joyRadius); joy = d > 4 ? { x: dx / d * k, z: dy / d * k } : { x: 0, z: 0 };
+  stickEl.style.transform = `translate(${joy.x * joyRadius}px,${joy.z * joyRadius}px)`; target = null;
+}
+function clearJoy() { joyId = null; joyOrigin = null; joy = { x: 0, z: 0 }; stickEl.style.transform = ''; joyEl.classList.remove('active'); }
+$('game').onpointerdown = e => {
+  if (!running) return;
+  if (e.pointerType === 'mouse') { walkTo(e.clientX, e.clientY); return; }
+  if (joyId !== null) return;
+  joyId = e.pointerId; joyStart = performance.now(); joyMoved = false; try { $('game').setPointerCapture(e.pointerId); } catch { } showJoy(e.clientX, e.clientY);
+};
+$('game').onpointermove = e => { if (e.pointerId === joyId && joyOrigin) moveJoy(e); };
+function endJoy(e) {
+  if (e.pointerId !== joyId) return;
+  const tap = !joyMoved && performance.now() - joyStart < 260;
+  clearJoy(); if (tap) walkTo(e.clientX, e.clientY);
+}
+$('game').onpointerup = endJoy; $('game').onpointercancel = endJoy; $('game').onlostpointercapture = e => { if (e.pointerId === joyId) clearJoy(); };
 addEventListener('keydown', e => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault(); keys[e.key.toLowerCase()] = true; target = null; if (e.key === 'Escape') stop(); });
 addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 addEventListener('blur', () => { if (running) stop(); }); document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); }); addEventListener('pagehide', save);
 $('game').addEventListener('webglcontextlost', e => { e.preventDefault(); stop(); toast('畫面暫時中斷，進度已儲存。請重新整理。'); });
-function resize() { renderer.setSize(innerWidth, innerHeight, false); const a = innerWidth / innerHeight, h = a < .8 ? 14.5 : a < 1.35 ? 12.5 : 11; camera.left = -h * a; camera.right = h * a; camera.top = h; camera.bottom = -h; camera.updateProjectionMatrix(); }
+function resize() { renderer.setSize(innerWidth, innerHeight, false); const a = innerWidth / innerHeight, h = a < .8 ? 13 : a < 1.35 ? 12 : 10.5; camera.left = -h * a; camera.right = h * a; camera.top = h; camera.bottom = -h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 
 // ---------- HUD ----------
