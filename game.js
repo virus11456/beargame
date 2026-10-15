@@ -368,7 +368,7 @@ function draw(t) {
     const maxHp = preyOf(s, b).hp; const bar = u.bar; bar.group.visible = alive && b.hp < maxHp; bar.fill.scale.x = 1.4 * Math.max(0, b.hp) / maxHp; bar.fill.position.x = -(1.4 - bar.fill.scale.x) / 2; bar.group.rotation.y = -g.rotation.y + Math.PI / 4;
     u.hp = b.hp;
     const base = u.kind === 'giant' ? 1.6 : u.kind === 'wolf' ? .72 : 1; g.scale.setScalar(base);
-    animatePrey(g, dt, visualTime, before.distanceTo(g.position) > .003);
+    animatePrey(g, window.__polar?.slow ? dt * .12 : dt, visualTime, before.distanceTo(g.position) > .003);
   });
 
   // loot on the ground
