@@ -32,7 +32,7 @@ test('assistant waits with its cargo at a full receiving queue',()=>{
 test('version 2 saves migrate through storage without losing progress',()=>{
  const old=fresh();old.version=2;delete old.assistant;delete old.buildHold;old.coins=777;old.bag=['raw'];old.helper=true;
  const loaded=loadGame({getItem:key=>key===SAVE_KEY?JSON.stringify(old):null});
- assert.equal(loaded.state.version,3);assert.equal(loaded.state.coins,777);assert.deepEqual(loaded.state.bag,['raw']);assert.equal(loaded.state.helper,true);assert.equal(loaded.notice,'');
+ assert.equal(loaded.state.version,5);assert.equal(loaded.state.coins,777);assert.deepEqual(loaded.state.bag,['raw']);assert.equal(loaded.state.helper,true);assert.equal(loaded.notice,'');
 });
 test('loading does not resume a pending automatic purchase',()=>{
  const s=fresh();s.buildHold={id:'weapon',t:1.7,latched:false};

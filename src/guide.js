@@ -1,4 +1,4 @@
-import { capacity, distance, stations, config } from './sim.js';
+import { capacity, distance, stations, config, cashPoint } from './sim.js';
 
 // Derive the next useful action from actual inventory, including unfinished work.
 export function nextAction(s) {
@@ -7,11 +7,15 @@ export function nextAction(s) {
     return { id, text, x: st.x, z: st.z + 1.7, name: st.name };
   };
   if (s.hp < 30 && s.z < 0) return { id: 'heal', text: '生命偏低，回營地恢復', x: 0, z: 7, name: '安全營地' };
+  const drop = s.drops.filter(d => d.z >= (s.expanded ? -27 : -17)).sort((a, b) => distance(s, a) - distance(s, b))[0];
+  const unloading = distance(s, {x: -6, z: 4.7}) < config.stationRange;
+  if (drop && s.bag.length < capacity(s) && !unloading && !s.bag.some(item => item !== 'raw')) {
+    return { id: 'loot', text: `繼續收集地面生肉 · 背包 ${s.bag.length}/${capacity(s)}`, ...drop, name: '掉落的生肉' };
+  }
   if (s.bag.includes('raw')) return station('cut', '把生肉卸到切肉台，產線會自動加工與販售');
   if (s.bag.includes('cut')) return station('grill', '把肉排送到烤爐，等待餐點完成');
   if (s.bag.includes('meal')) return station('sell', '把餐點送上櫃台，客人會自動購買');
-  const drop = [...s.drops].sort((a, b) => distance(s, a) - distance(s, b))[0];
-  if (drop && s.bag.length < capacity(s)) return { id: 'loot', text: '雪地還有生肉，靠近就會自動拾取', ...drop, name: '掉落的生肉' };
+  if(s.pendingCash>0)return {id:'cash',text:`客人已付款，前往收取 ${s.pendingCash} 金幣`,...cashPoint,name:'收款區'};
   const bear = s.bears.filter(b => b.hp > 0 && (b.id < 6 || s.expanded)).sort((a, b) => distance(s, a) - distance(s, b))[0];
   return { id: 'hunt', text: bear ? '前往雪地狩獵，靠近北極熊自動攻擊' : '獵物休息中，先整理營地的物資', x: bear?.x ?? 0, z: bear?.z ?? 7, name: bear ? '北極熊' : '營地' };
 }
@@ -30,6 +34,6 @@ export function stationFeedback(s, st) {
     return { mode: 'wrong', text: `此處只收${input}；請把${resourceNames[wrong]}送到${destination.name}`, target: destination.id };
   }
   if (st.output && s.outputs[st.id] > 0) return { mode: 'active', text: `${resourceNames[st.output]}將自動送到下一站，可繼續狩獵` };
-  if (s.queues[st.id].length) return { mode: 'wait', text: st.id === 'sell' ? '客人正在取餐，金幣會自動入帳' : `正在加工，會自動送到下一站；你可以繼續狩獵` };
+  if (s.queues[st.id].length) return { mode: 'wait', text: st.id === 'sell' ? '客人取餐後把錢留在旁邊，靠近收款區即可收取' : `正在加工，會自動送到下一站；你可以繼續狩獵` };
   return { mode: 'idle', text: `這裡接收${input}；帶到圓圈內就會自動卸貨` };
 }
