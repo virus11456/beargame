@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { createHuman, animateHuman, createBear, animatePrey, createTree, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
-import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf } from './src/sim.js';
-import { gates } from './src/camp.js';
+import { createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf } from './src/sim.js';
+import { gatesOf, maxCamp, buildingSlots } from './src/camp.js';
 import { themes } from './src/stages.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
 import { nextAction, padLabel } from './src/guide.js';
@@ -49,17 +49,16 @@ function place(mesh, i, x, y, z, w, h, d, ry = 0) { dummy.position.set(x, y, z);
 
 // ---------- terrain ----------
 const groundMesh = box(scene, '#eef3f5', 0, -.5, -12, 220, 1, 220); groundMesh.material = new THREE.MeshStandardMaterial({ color: '#eef3f5', roughness: .9 });
-const floorW = camp.maxX - camp.minX + .4, floorD = camp.maxZ - camp.minZ + .4, floorZ = (camp.minZ + camp.maxZ) / 2;
-const floorMesh = box(scene, '#c9996a', 0, .02, floorZ, floorW, .1, floorD); floorMesh.material = new THREE.MeshStandardMaterial({ color: '#c9996a', roughness: .9 });
-const floorLightMesh = box(scene, '#d4a878', 0, .035, floorZ, floorW - 1.2, .1, floorD - 1.2, false); floorLightMesh.material = new THREE.MeshStandardMaterial({ color: '#d4a878', roughness: .9 });
-for (let i = 0; i < 26; i++) ball(scene, i % 2 ? '#cfa072' : '#dbb286', camp.minX + 1 + noise(i) * (floorW - 2.4), .07, camp.minZ + 1 + noise(i + 40) * (floorD - 2.4), .6 + noise(i + 9) * .75, .04, .4 + noise(i + 3) * .5);
+const floorMesh = box(scene, '#c9996a', 0, .02, 0, 1, .1, 1); floorMesh.material = new THREE.MeshStandardMaterial({ color: '#c9996a', roughness: .9 });
+const floorLightMesh = box(scene, '#d4a878', 0, .035, 0, 1, .1, 1, false); floorLightMesh.material = new THREE.MeshStandardMaterial({ color: '#d4a878', roughness: .9 });
+const floorPatches = Array.from({ length: 40 }, (_, i) => ball(scene, i % 2 ? '#cfa072' : '#dbb286', 0, .07, 0, .6 + noise(i + 9) * .75, .04, .4 + noise(i + 3) * .5));
 // Snow path for the customer line.
 box(scene, '#dbe8f1', counter.x + 9.5, .015, counter.z, 23, .08, 2.8, false);
 box(scene, '#cfe0ec', counter.x + 9.5, .02, counter.z, 23, .08, .5, false);
 // Snow mounds, rocks and bare trees around the field.
 for (let i = 0; i < 70; i++) {
   const x = -46 + noise(i * 3) * 92, z = -52 + noise(i * 3 + 1) * 66;
-  if (x > camp.minX - 3 && x < camp.maxX + 3 && z > camp.minZ - 3 && z < camp.maxZ + 3) continue;
+  if (x > maxCamp.minX - 3 && x < maxCamp.maxX + 3 && z > maxCamp.minZ - 3 && z < maxCamp.maxZ + 3) continue;
   if (z > counter.z - 2.5 && z < counter.z + 2.5 && x > counter.x - 1 && x < counter.x + 18) continue;
   const herdZone = Math.hypot(x, z * 1.15) < 24 && !(x > 8 && Math.abs(z) < 10);
   const kind = noise(i * 3 + 2);
@@ -68,29 +67,45 @@ for (let i = 0; i < 70; i++) {
   else if (!herdZone) { const t = createTree(.8 + noise(i) * .7); t.position.set(x, 0, z); t.rotation.y = noise(i + 5) * 6; scene.add(t); }
 }
 
-// ---------- fence with gate panels ----------
+// ---------- fence with gate panels (rebuilt whenever the camp grows) ----------
 const postGeo = new THREE.BoxGeometry(.18, 1.15, .18), railGeo = new THREE.BoxGeometry(1, .1, .08);
-const posts = [], rails = [];
-const opening = (x, z) => gates.some(g => Math.abs(z - (g.z < 0 ? fz0 : fz1)) < .01 && Math.abs(x - g.x) < g.halfWidth);
-function fenceRun(x0, z0, x1, z1, skip) {
-  const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / .7), dx = (x1 - x0) / n, dz = (z1 - z0) / n, ry = Math.atan2(dx, dz) + Math.PI / 2;
-  for (let i = 0; i <= n; i++) { const x = x0 + dx * i, z = z0 + dz * i; if (skip && skip(x, z)) continue; posts.push({ x, z, ry }); if (i < n && !(skip && skip(x + dx, z + dz))) rails.push({ x: x + dx / 2, z: z + dz / 2, ry, len: Math.hypot(dx, dz) }); }
-}
-const fx0 = camp.minX - .2, fx1 = camp.maxX + .2, fz0 = camp.minZ - .2, fz1 = camp.maxZ + .2;
-fenceRun(fx0, fz0, fx1, fz0, x => opening(x, fz0)); fenceRun(fx0, fz1, fx1, fz1, x => opening(x, fz1)); fenceRun(fx0, fz0, fx0, fz1); fenceRun(fx1, fz0, fx1, fz1);
-const postMesh = instanced(postGeo, '#a97d53', posts.length), railMesh = instanced(railGeo, '#c4986a', rails.length * 2);
-posts.forEach((p, i) => place(postMesh, i, p.x, .58, p.z, 1, 1, 1, p.ry)); postMesh.count = posts.length;
-rails.forEach((r, i) => { place(railMesh, i * 2, r.x, .5, r.z, r.len, 1, 1, r.ry); place(railMesh, i * 2 + 1, r.x, .88, r.z, r.len, 1, 1, r.ry); }); railMesh.count = rails.length * 2;
-const capMesh = instanced(new THREE.ConeGeometry(.14, .26, 5), '#d9d2c4', posts.length); posts.forEach((p, i) => place(capMesh, i, p.x, 1.27, p.z, 1, 1, 1)); capMesh.count = posts.length;
+const postMesh = instanced(postGeo, '#a97d53', 220), railMesh = instanced(railGeo, '#c4986a', 440), capMesh = instanced(new THREE.ConeGeometry(.14, .26, 5), '#d9d2c4', 220); capMesh.castShadow = false;
+const gateGroup = new THREE.Group(); scene.add(gateGroup);
 function gatePanel(x, z, ry) {
-  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g);
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; gateGroup.add(g);
   for (const side of [-1, 1]) box(g, '#c43f2d', side * 1.05, .95, 0, .16, 1.9, .16);
   box(g, '#c43f2d', 0, 1.85, 0, 2.3, .16, .16); box(g, '#c43f2d', 0, .1, 0, 2.3, .14, .16);
   for (const d of [-1, 1]) { const bar = box(g, '#d8553f', 0, .97, 0, .12, 2.6, .1); bar.rotation.z = d * .88; }
   box(g, '#a93523', 0, .97, -.05, 1.9, 1.5, .04, false);
   return g;
 }
-for (const g of gates) { const z = g.z < 0 ? fz0 : fz1; gatePanel(g.x - g.halfWidth - 1.1, z, 0); gatePanel(g.x + g.halfWidth + 1.1, z, 0); } gatePanel(fx0, 3.5, Math.PI / 2);
+let shownCamp = '';
+function rebuildCamp() {
+  const c = campOf(s), key = JSON.stringify(c); if (key === shownCamp) return; shownCamp = key;
+  const gs = gatesOf(c), fx0 = c.minX - .2, fx1 = c.maxX + .2, fz0 = c.minZ - .2, fz1 = c.maxZ + .2;
+  const opening = (x, z) => gs.some(g => Math.abs(z - (g.z < 0 ? fz0 : fz1)) < .01 && Math.abs(x - g.x) < g.halfWidth);
+  const posts = [], rails = [];
+  const run = (x0, z0, x1, z1, skip) => { const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / .7), dx = (x1 - x0) / n, dz = (z1 - z0) / n, ry = Math.atan2(dx, dz) + Math.PI / 2; for (let i = 0; i <= n; i++) { const x = x0 + dx * i, z = z0 + dz * i; if (skip && skip(x, z)) continue; posts.push({ x, z, ry }); if (i < n && !(skip && skip(x + dx, z + dz))) rails.push({ x: x + dx / 2, z: z + dz / 2, ry, len: Math.hypot(dx, dz) }); } };
+  run(fx0, fz0, fx1, fz0, x => opening(x, fz0)); run(fx0, fz1, fx1, fz1, x => opening(x, fz1)); run(fx0, fz0, fx0, fz1); run(fx1, fz0, fx1, fz1);
+  posts.forEach((p, i) => { place(postMesh, i, p.x, .58, p.z, 1, 1, 1, p.ry); place(capMesh, i, p.x, 1.27, p.z, 1, 1, 1); }); postMesh.count = capMesh.count = Math.min(220, posts.length);
+  rails.forEach((r, i) => { place(railMesh, i * 2, r.x, .5, r.z, r.len, 1, 1, r.ry); place(railMesh, i * 2 + 1, r.x, .88, r.z, r.len, 1, 1, r.ry); }); railMesh.count = Math.min(440, rails.length * 2);
+  postMesh.instanceMatrix.needsUpdate = capMesh.instanceMatrix.needsUpdate = railMesh.instanceMatrix.needsUpdate = true;
+  gateGroup.clear(); for (const g of gs) { const z = g.z < 0 ? fz0 : fz1; gatePanel(g.x - g.halfWidth - 1.1, z, 0); gatePanel(g.x + g.halfWidth + 1.1, z, 0); }
+  const w = c.maxX - c.minX + .4, d = c.maxZ - c.minZ + .4, cx = (c.minX + c.maxX) / 2, cz = (c.minZ + c.maxZ) / 2;
+  floorMesh.position.set(cx, .02, cz); floorMesh.scale.set(w, .1, d); floorLightMesh.position.set(cx, .035, cz); floorLightMesh.scale.set(w - 1.2, .1, d - 1.2);
+  floorPatches.forEach((m, i) => m.position.set(c.minX + 1 + noise(i) * (w - 2.4), .07, c.minZ + 1 + noise(i + 40) * (d - 2.4)));
+}
+
+// ---------- buildings ----------
+const buildingViews = new Map();
+function syncBuildings(animate) {
+  for (const [type, g] of buildingViews) if (!s.buildings.includes(type)) { scene.remove(g); buildingViews.delete(type); }
+  s.buildings.forEach((type, i) => {
+    if (buildingViews.has(type)) return;
+    const slot = buildingSlots[i], g = createBuilding(type); g.position.set(slot.x, 0, slot.z); g.rotation.y = slot.ry; scene.add(g); buildingViews.set(type, g);
+    g.userData.rise = animate ? .9 : 0; if (!animate) g.scale.setScalar(1); else g.scale.setScalar(.01);
+  });
+}
 
 // ---------- table, cash pile, pads, sign ----------
 const tableGroup = new THREE.Group(); tableGroup.position.set(table.x + .8, 0, table.z); scene.add(tableGroup);
@@ -154,7 +169,7 @@ function applyTheme() {
 function switchState(next, message) {
   s = next; target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
   for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
-  buildBears(); applyTheme(); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
+  buildBears(); applyTheme(); rebuildCamp(); syncBuildings(false); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
 }
 buildBears();
 const customers = Array.from({ length: customerCount }, (_, i) => { const g = createHuman(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'); g.scale.setScalar(.92); g.userData.meat = rbox(g, '#e0737e', 0, 1.05, .55, .6, .25, .5); g.userData.meat.visible = false; scene.add(g); return g; });
@@ -310,7 +325,7 @@ function draw(t) {
     acc += dt;
     while (acc >= 1 / 30) {
       let x = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0) + joy.x, z = (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0) + joy.z;
-      if (target && Math.hypot(x, z) < .1) { const goal = routeTarget(s, target); const d = Math.hypot(goal.x - s.x, goal.z - s.z); if (Math.hypot(target.x - s.x, target.z - s.z) <= .3) target = null; else if (d > .05) { x = (goal.x - s.x) / d; z = (goal.z - s.z) / d; } }
+      if (target && Math.hypot(x, z) < .1) { const goal = routeTarget(s, target, campOf(s)); const d = Math.hypot(goal.x - s.x, goal.z - s.z); if (Math.hypot(target.x - s.x, target.z - s.z) <= .3) target = null; else if (d > .05) { x = (goal.x - s.x) / d; z = (goal.z - s.z) / d; } }
       const events = step(s, 1 / 30, { x, z });
       for (const e of events) {
         if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; beep(220, .12, 'sawtooth', .025); }
@@ -319,6 +334,8 @@ function draw(t) {
         else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); beep(700 + Math.min(40, s.meat) * 12, .05); } }
         else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) beep(520, .05); }
         else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) beep(980, .06); }
+        else if (e.type === 'building') { syncBuildings(true); for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - .5) * 3, e.z + (Math.random() - .5) * 3, '#e8dcc8', .5, .6, 1.8); toast(`${e.name}蓋好了！`); beep(520, .2, 'triangle', .04); beep(780, .3, 'triangle', .04); }
+        else if (e.type === 'expand') { rebuildCamp(); const c = e.camp; for (let i = 0; i < 14; i++) spark(c.minX + Math.random() * (c.maxX - c.minX), c.minZ + Math.random() * (c.maxZ - c.minZ), '#ffffff', .6, .8, 1.2); toast('營地擴大了！新的土地圍好柵欄'); beep(330, .4, 'sine', .05); beep(660, .5, 'sine', .05); }
         else if (e.type === 'automated') { burst(s.x, s.z, '#9ff39a'); toast('營地全自動運轉！助手、箭塔、收銀員、獵人都到齊了'); beep(660, .3); beep(990, .4); beep(1320, .5); }
         else if (e.type === 'arrow') { transfer('arrow', e.from, e.to, 5); }
         else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); beep(1200, .04, 'triangle', .02); }
@@ -410,6 +427,7 @@ function draw(t) {
     if (c.phase === 'queue' || c.hold > 0) g.rotation.y = -Math.PI / 2; g.userData.meat.visible = c.carrying && c.hold < .1;
   });
   const front = s.customers.people[s.customers.queue[0]]; if (front) bubble.p.set(front.x, 2.9, front.z); bubble.el.hidden = !front || Math.hypot(front.x - counter.x, front.z - counter.z) > .3;
+  for (const g of buildingViews.values()) { const u = g.userData; if (u.rise > 0) { u.rise = Math.max(0, u.rise - dt); const k = 1 - u.rise / .9; const sc = k < .7 ? k / .7 * 1.15 : 1.15 - (k - .7) / .3 * .15; g.scale.setScalar(Math.max(.01, sc)); g.position.y = Math.sin(k * Math.PI) * .3; } if (u.fire) { u.fire.scale.y = .8 + Math.sin(visualTime * 9) * .3; u.fire.scale.x = u.fire.scale.z = .9 + Math.sin(visualTime * 7) * .15; } }
   cashier.visible = s.cashier; cashier.rotation.y = Math.PI * .75 + Math.sin(visualTime * 2) * .1;
   hunterViews.forEach((g, i) => { const h = s.hunters[i]; g.visible = !!h; if (!h) return; const dx = h.x - g.position.x, dz = h.z - g.position.z; if (Math.hypot(dx, dz) > .01) g.rotation.y = Math.atan2(dx, dz); g.position.set(h.x, 0, h.z); animateHuman(g, visualTime, dt); });
   helper.visible = s.helper; helperLabel.el.hidden = !s.helper;
@@ -434,4 +452,4 @@ if (loaded.notice) $('save-note').textContent = loaded.notice;
 if (s.time > 0) $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`;
 buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle);
 if (location.search.includes('debug')) window.__polar = { state: () => s, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), prey: i => { const g = bearViews[i]; const w = new THREE.Vector3(); g.userData.body.getWorldPosition(w); return { visible: g.visible, dying: g.userData.dying, spawn: g.userData.spawn, pos: [g.position.x, g.position.y, g.position.z], inner: [g.userData.inner.position.x, g.userData.inner.position.y, g.userData.inner.position.z], rot: [g.userData.inner.rotation.x, g.userData.inner.rotation.z], scale: g.userData.inner.scale.y, world: [w.x, w.y, w.z] }; }, slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
-updateHud(); requestAnimationFrame(draw);
+applyTheme(); rebuildCamp(); syncBuildings(false); renderStages(); updateHud(); requestAnimationFrame(draw);

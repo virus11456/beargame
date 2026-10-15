@@ -172,3 +172,47 @@ export function createTower(level = 1) {
   if (level >= 3) { part(g, '#6b4b32', 0, h + 2.4, 0, .06, 1.4, .06, unit, false); part(g, '#f0c75a', .35, h + 2.85, 0, .7, .4, .03, unit, false); }
   g.userData.bow = bow; return g;
 }
+
+// Camp buildings. Each one is an original low-poly structure about 3×3 units.
+function cabin(g, w, h, d, wall = '#c99a6a', roof = '#8d4b3a') {
+  part(g, wall, 0, h / 2, 0, w, h, d, unit);
+  for (let y = .3; y < h; y += .5) part(g, '#b3885a', 0, y, 0, w + .04, .08, d + .04, unit, false);
+  for (const side of [-1, 1]) { const slope = part(g, roof, 0, h + .55, side * d / 4, w + .6, .14, d / 2 + .45, unit); slope.rotation.x = side * .62; }
+  part(g, '#6b3a2c', 0, h + .95, 0, w + .7, .12, .16, unit, false);
+}
+export function createBuilding(type) {
+  const g = new THREE.Group();
+  if (type === 'forge') {
+    const stump = new THREE.Mesh(new THREE.CylinderGeometry(.55, .65, .7, 8), material('#7d5b43')); stump.position.y = .35; stump.castShadow = true; g.add(stump);
+    part(g, '#4a5259', 0, .95, 0, 1.1, .3, .5, unit); part(g, '#3a4147', .55, 1.05, 0, .35, .2, .3, smooth, false); part(g, '#4a5259', 0, .78, 0, .5, .2, .35, unit, false);
+    part(g, '#6b4b32', -1.2, .6, -.6, .14, 1.2, .14, unit); part(g, '#6b4b32', -1.2, .6, .6, .14, 1.2, .14, unit); part(g, '#8a6a4e', -1.2, 1.1, 0, .1, .1, 1.4, unit, false);
+    for (const z of [-.35, .35]) { const sw = createWeapon(1); sw.scale.setScalar(.55); sw.position.set(-1.2, .95, z); sw.rotation.x = Math.PI / 2; g.add(sw); }
+    part(g, '#5a4a40', 1.3, .35, .4, .9, .7, .9, unit); const fire = new THREE.Mesh(new THREE.ConeGeometry(.3, .7, 6), new THREE.MeshBasicMaterial({ color: '#ff9a3c' })); fire.position.set(1.3, 1.05, .4); g.add(fire); g.userData.fire = fire;
+  } else if (type === 'storage') {
+    for (const x of [-1.2, 1.2]) for (const z of [-.7, .7]) part(g, '#8a6a4e', x, .9, z, .16, 1.8, .16, unit);
+    part(g, '#b3885a', 0, 1.85, 0, 2.9, .12, 1.9, unit); part(g, '#8a6a4e', 0, 1.6, 0, 2.6, .08, .08, unit, false);
+    for (let i = 0; i < 4; i++) part(g, '#e0737e', -.9 + i * .6, 1.15, 0, .4, .55, .3, rounded);
+    part(g, '#c9a06a', -.8, .35, 1.1, .8, .7, .7, unit); part(g, '#c9a06a', .3, .3, 1.15, .7, .6, .6, unit); part(g, '#d9b47a', -.8, .72, 1.1, .85, .06, .75, unit, false);
+  } else if (type === 'sled') {
+    for (const x of [-1.3, 1.3]) part(g, '#8a6a4e', x, 1, -1, .16, 2, .16, unit);
+    const roof = part(g, '#6f8f9b', 0, 2.05, -.4, 3.2, .12, 2.4, unit); roof.rotation.x = .22;
+    for (const z of [-.5, .5]) part(g, '#5a3f2a', 0, .18, z, 2.4, .1, .12, unit); for (let i = 0; i < 5; i++) part(g, '#c9a06a', -1 + i * .5, .42, 0, .4, .08, 1.2, unit, false);
+    part(g, '#5a3f2a', 1.25, .35, 0, .12, .5, 1.2, unit, false); part(g, '#d84c3c', -.6, .62, 0, .8, .35, .8, rounded);
+  } else if (type === 'hut') {
+    cabin(g, 2.6, 1.9, 2.2, '#c99a6a', '#8d4b3a'); part(g, '#5a3f2a', 0, .7, 1.12, .7, 1.3, .06, unit, false); part(g, '#9fd3ec', .8, 1.2, 1.12, .55, .45, .05, unit, false);
+    part(g, '#b3885a', 2.1, .55, .4, 1.1, .5, .8, unit); for (const z of [-.1, .9]) { const wheel = new THREE.Mesh(new THREE.CylinderGeometry(.28, .28, .12, 10), material('#5a3f2a')); wheel.rotation.z = Math.PI / 2; wheel.position.set(2.1, .28, z); g.add(wheel); }
+    part(g, '#e0737e', 2.1, .95, .4, .5, .3, .5, rounded);
+  } else if (type === 'booth') {
+    part(g, '#3f7fa8', 0, .55, 0, 2.4, 1.1, 1.2, unit); part(g, '#f4f1e6', 0, 1.15, 0, 2.6, .12, 1.4, unit, false);
+    for (const x of [-1.1, 1.1]) part(g, '#8a6a4e', x, 1.5, -.4, .12, 1.4, .12, unit);
+    for (let i = 0; i < 5; i++) part(g, i % 2 ? '#f4f1e6' : '#d84c3c', -1.1 + i * .55, 2.2, -.4, .56, .12, 1.5, unit, false);
+    part(g, '#5fd45a', 0, 1.3, .62, .9, .2, .06, unit, false); for (let i = 0; i < 6; i++) part(g, '#5fd45a', -.5 + (i % 3) * .5, 1.24 + Math.floor(i / 3) * .07, .1, .45, .06, .3, unit, false);
+  } else if (type === 'lodge') {
+    cabin(g, 3.4, 2.4, 2.8, '#b88757', '#6e4a3a'); part(g, '#5a3f2a', -.6, .85, 1.42, .8, 1.6, .06, unit, false); part(g, '#9fd3ec', .8, 1.5, 1.42, .6, .5, .05, unit, false);
+    part(g, '#7d7d7d', 1, 3.5, -.6, .45, 1.1, .45, unit); part(g, '#e6e0d6', 1, 4.1, -.6, .55, .12, .55, unit, false);
+    for (let i = 0; i < 3; i++) { part(g, '#6b4b32', -2.1 + i * .35, 1.3, .8, .07, 2.6, .07, unit, false); cone(g, '#dfe8ec', -2.1 + i * .35, 2.75, .8, .09, .35); }
+    part(g, '#6b4b32', 2.3, 2, 1, .08, 4, .08, unit, false); part(g, '#f0c75a', 2.75, 3.6, 1, .8, .45, .04, unit, false);
+  }
+  g.userData.type = type; return g;
+}
+function cone(parent, c, x, y, z, r, h) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), material(c)); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; }

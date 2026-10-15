@@ -1,8 +1,8 @@
-import { capacity, distance, table, cashPoint, pads, price, level, canHire, unlocked, fullyAutomated, inCamp, herdSize, stageCleared, hasNext } from './sim.js';
+import { capacity, distance, table, cashPoint, pads, price, level, canHire, unlocked, fullyAutomated, inCamp, campOf, herdSize, stageCleared, hasNext } from './sim.js';
 
 // The next useful move, derived from what the player actually carries.
 export function nextAction(s) {
-  if (s.hp < 30 && !inCamp(s)) return { id: 'heal', text: '生命偏低，回營地休息', x: 0, z: 2, name: '營地' };
+  if (s.hp < 30 && !inCamp(s, campOf(s))) return { id: 'heal', text: '生命偏低，回營地休息', x: 0, z: 2, name: '營地' };
   const near = s.drops.filter(d => distance(s, d) < 9).sort((a, b) => distance(s, a) - distance(s, b))[0];
   const full = s.meat >= capacity(s);
   if (s.meat > 0 && (full || !near)) return { id: 'table', text: full ? '背包滿了！把肉堆到販售桌' : '把肉帶回販售桌給客人', ...table, name: '販售桌' };

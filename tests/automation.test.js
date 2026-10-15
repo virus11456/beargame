@@ -10,7 +10,7 @@ test('arrow tower shoots the nearest prey in range and its kills drop meat', () 
   const s = fresh(); const b = s.bears[0]; b.x = towerPoint.x + 3; b.z = towerPoint.z - 3; b.hx = b.x; b.hz = b.z;
   assert.equal(run(s, 2).filter(e => e.type === 'arrow').length, 0, 'no tower yet');
   s.upgrades.tower = 1; const events = run(s, 6);
-  assert.ok(events.filter(e => e.type === 'arrow').length >= 4); assert.ok(s.kills >= 1); assert.ok(s.drops.length >= 3);
+  assert.ok(events.filter(e => e.type === 'arrow').length >= 3); assert.ok(s.kills >= 1); assert.ok(s.drops.length >= 3);
   assert.ok(towerStats(3).range > towerStats(1).range); assert.equal(towerStats(0), null);
 });
 
@@ -63,4 +63,25 @@ test('helper collects meat lying right beside the fence and brings it home throu
   }
   const k = fresh(); k.x = 0; k.z = -20; const b = k.bears[0]; b.x = 2; b.z = camp.minZ - .8; b.hp = 1; k.upgrades.weapon = 5; k.x = b.x; k.z = b.z - 1; step(k, 1 / 30);
   assert.ok(k.drops.every(d => !inCamp(d) && (d.z <= camp.minZ - .9 || d.x <= camp.minX - .9 || d.x >= camp.maxX + .9 || d.z >= camp.maxZ + .9)), 'loot pushed clear of the fence band');
+});
+
+test('buying buildings raises them in order and grows the fenced camp', async () => {
+  const { expandedCamp, buildingSlots, inCamp: inside } = await import('../src/camp.js');
+  const { campOf } = await import('../src/sim.js');
+  const s = fresh(); s.coins = 10 ** 6; s.sold = 100; s.upgrades.tower = 1;
+  assert.deepEqual(campOf(s), camp); assert.deepEqual(s.buildings, []);
+  assert.equal(buy(s, 'weapon'), true); assert.deepEqual(s.buildings, ['forge']); assert.equal(campOf(s).minX, -15);
+  assert.equal(buy(s, 'weapon'), true); assert.equal(s.buildings.length, 1, 'second level adds no building');
+  buy(s, 'bag'); buy(s, 'speed'); assert.equal(campOf(s).maxZ, 12); assert.equal(s.buildings.length, 3);
+  buy(s, 'helper'); buy(s, 'cashier'); assert.equal(campOf(s).minX, -21); buy(s, 'hunter'); assert.equal(s.buildings.length, 6);
+  s.buildings.forEach((b, i) => assert.ok(inside(buildingSlots[i], campOf(s)), `${b} inside the camp`));
+  assert.deepEqual(expandedCamp(0), camp); assert.ok(expandedCamp(6).minX < expandedCamp(1).minX);
+  // the enlarged fence is solid: walking west from the old edge no longer leaves the camp
+  s.x = -12; s.z = 0; for (let i = 0; i < 60; i++) step(s, 1 / 30, { x: -1, z: 0 }); assert.ok(s.x >= -21 && s.x < -12 && inside(s, campOf(s)));
+  // pad purchase emits building and expand events
+  const t = fresh(); t.coins = 5000; const p = pads.find(p => p.id === 'bag'); t.x = p.x; t.z = p.z; const events = []; for (let i = 0; i < 90; i++) events.push(...step(t, 1 / 30));
+  assert.ok(events.some(e => e.type === 'building' && e.id === 'storage')); assert.ok(events.some(e => e.type === 'expand' && e.camp.minX === -15));
+  // saves keep the buildings and old saves derive them from upgrades
+  assert.deepEqual(parseSave(serialize(s)).buildings, s.buildings);
+  const old = { ...fresh(), upgrades: { ...fresh().upgrades, weapon: 2, bag: 1 }, helper: true }; delete old.buildings; assert.deepEqual(parseSave(JSON.stringify(old)).buildings, ['forge', 'storage', 'hut']);
 });

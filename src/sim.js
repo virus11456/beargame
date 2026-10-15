@@ -3,10 +3,10 @@
 // meat → drop it on the sales table → customers pay cash at the table →
 // collect the cash → stand on ground pads to buy upgrades and expand.
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
-import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter } from './progression.js';
-import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside, pushOut } from './camp.js';
+import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter, campOf, buildingOf, buildingNames } from './progression.js';
+import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside, pushOut, buildingSlots, expandedCamp } from './camp.js';
 import { stages, stories, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
-export { price, level, canHire, unlocked, automation, fullyAutomated, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
+export { price, level, canHire, unlocked, automation, fullyAutomated, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, campOf, buildingOf, buildingNames, buildingSlots, expandedCamp, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
 
 export const config = {
   speed: 6.2, capacityPerLevel: 20,
@@ -31,7 +31,7 @@ export const moveSpeed = s => config.speed * (1 + s.upgrades.speed * .15);
 const noise = n => { const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
 // Prey gathers in three dense packs around the camp (north, west, south);
 // the east stays clear for the customer path. Giants sit at the back of a pack.
-const packs = [{ x: 0, z: -17 }, { x: -21, z: -1 }, { x: -2, z: 17.5 }];
+const packs = [{ x: 0, z: -17 }, { x: -28, z: -1 }, { x: -2, z: 18.5 }];
 function bear(i, stage = stages[0]) {
   const kind = kindOf(stage, i), pack = packs[i % 3], j = Math.floor(i / 3), ring = Math.floor(j / 6), slot = j % 6;
   const angle = slot / 6 * Math.PI * 2 + ring * .5 + noise(i) * .5;
@@ -44,7 +44,7 @@ export function fresh(stage = 0, unlocked = 0) {
   return {
     version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {}, storySeen: false,
     x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
-    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0 }, helper: false, cashier: false, hunters: [],
+    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0 }, helper: false, cashier: false, hunters: [], buildings: [],
     paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0, tower: 0, cashier: 0, hunter: 0 }, padLatch: null,
     attack: 0, towerTimer: 0, transfer: 0, serve: 0, cashTimer: 0, payTimer: 0, time: 0,
     customers: newCustomers(), assistant: newAssistant(),
@@ -77,21 +77,21 @@ export function buy(s, key) {
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 function kill(s, b, events) {
   const kind = preyOf(s, b); s.kills++; b.respawn = kind.respawn;
-  for (let j = 0; j < kind.loot; j++) s.drops.push({ ...pushOut({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08) }), born: s.time, ox: b.x, oz: b.z });
+  for (let j = 0; j < kind.loot; j++) s.drops.push({ ...pushOut({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08) }, .9, campOf(s)), born: s.time, ox: b.x, oz: b.z });
   events.push({ type: 'kill', id: b.id, x: b.x, z: b.z, kind: kindOf(stageOf(s), b.id), from: events.length ? events[events.length - 1].from : undefined });
 }
 
 export function step(s, dt, input = { x: 0, z: 0 }) {
   const events = [];
-  const bounds = worldBounds(s);
+  const bounds = worldBounds(s), c = campOf(s);
   s.time += dt;
   const len = Math.max(1, Math.hypot(input.x, input.z));
   if (Math.hypot(input.x, input.z) > .05) s.face = Math.atan2(input.x, input.z);
-  const moved = fenceStep(s, { x: s.x + input.x / len * moveSpeed(s) * dt, z: s.z + input.z / len * moveSpeed(s) * dt });
+  const moved = fenceStep(s, { x: s.x + input.x / len * moveSpeed(s) * dt, z: s.z + input.z / len * moveSpeed(s) * dt }, c);
   s.x = Math.max(bounds.minX, Math.min(bounds.maxX, moved.x));
   s.z = Math.max(bounds.minZ, Math.min(bounds.maxZ, moved.z));
   s.attack -= dt;
-  s.hp = Math.min(100, s.hp + (inCamp(s) ? config.regenCamp : config.regenField) * dt);
+  s.hp = Math.min(100, s.hp + (inCamp(s, c) ? config.regenCamp : config.regenField) * dt);
 
   // Wide sword swing: every living bear inside the fan takes damage at once.
   const weapon = weaponStats(s.upgrades.weapon);
@@ -130,7 +130,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
     const kind = preyOf(s, b);
     b.cool -= dt;
     const d = distance(s, b);
-    if (d < config.aggro && !inCamp(s)) {
+    if (d < config.aggro && !inCamp(s, c)) {
       if (d > config.biteRange * kind.size * .8) { b.x += (s.x - b.x) / d * kind.speed * dt; b.z += (s.z - b.z) / d * kind.speed * dt; }
       else if (b.cool <= 0 && biters < config.maxBiters) { biters++; s.hp -= kind.bite; b.cool = kind.biteInterval; events.push({ type: 'hurt', id: b.id, damage: kind.bite, x: b.x, z: b.z }); }
     } else {
@@ -138,7 +138,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
       const home = distance(roam, b);
       if (home > .08) { const stride = Math.min(home, dt * .9); b.x += (roam.x - b.x) / home * stride; b.z += (roam.z - b.z) / home * stride; }
     }
-    keepOutside(b);
+    keepOutside(b, c);
   }
   if (s.hp <= 0) { s.x = 0; s.z = 2; s.hp = 100; events.push({ type: 'rescue' }); }
 
@@ -202,7 +202,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
         events.push({ type: 'pay', id: pad.id, value: chunk, from: { x: s.x, z: s.z }, to: { x: pad.x, z: pad.z } });
       }
       if (s.paid[pad.id] >= cost) {
-        s.paid[pad.id] = 0; apply(s, pad.id); s.padLatch = pad.id;
+        s.paid[pad.id] = 0; s.padLatch = pad.id; apply(s, pad.id, events);
         events.push({ type: 'built', id: pad.id, name: pad.name, level: level(s, pad.id), x: pad.x, z: pad.z });
         if (fullyAutomated(s)) events.push({ type: 'automated' });
       }
@@ -232,6 +232,8 @@ export function parseSave(text) {
   if (!count(v.stage, stages.length - 1) || !count(v.unlocked, stages.length - 1) || typeof v.cleared !== 'boolean' || !count(v.lifetime)) throw Error('stage');
   const stage = stages[v.stage];
   v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false;
+  if (!Array.isArray(v.buildings)) { v.buildings = []; for (const [k, b] of Object.entries(buildingOf)) if ((k === 'helper' ? v.helper : k === 'cashier' ? v.cashier : v.upgrades[k] > 0) && v.buildings.length < buildingSlots.length) v.buildings.push(b); }
+  if (v.buildings.length > buildingSlots.length || new Set(v.buildings).size !== v.buildings.length || v.buildings.some(b => !buildingNames[b])) throw Error('buildings');
   if (typeof v.storySeen !== 'boolean') throw Error('story');
   if (typeof v.name !== 'string' || v.name.length > 16 || typeof v.cashier !== 'boolean' || !count(v.totalKills) || typeof v.records !== 'object' || v.records === null) throw Error('profile');
   if (!Array.isArray(v.hunters) || v.hunters.length > 3 || v.hunters.some(h => !Number.isFinite(h.x) || !Number.isFinite(h.z) || !finite(h.cool, 0))) throw Error('hunters');

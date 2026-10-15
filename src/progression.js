@@ -1,4 +1,4 @@
-import { routeTarget, fenceStep } from './camp.js';
+import { routeTarget, fenceStep, expandedCamp, buildingSlots } from './camp.js';
 import { stageOf } from './stages.js';
 // Ground upgrade pads. Standing on a pad drains carried cash into it bit by bit,
 // exactly like the reference playable: the price counts down and the upgrade
@@ -26,22 +26,37 @@ export const canHire = s => s.sold >= 30;
 export const unlocked = (s, key) => key === 'helper' ? canHire(s) : key === 'cashier' ? s.sold >= 60 : key === 'hunter' ? s.upgrades.tower > 0 : true;
 export const automation = s => ({ helper: s.helper, tower: s.upgrades.tower > 0, cashier: s.cashier, hunter: s.upgrades.hunter > 0 });
 export const fullyAutomated = s => Object.values(automation(s)).every(Boolean);
-export function apply(s, key) {
+// Buildings rise in the camp the first time each of these is bought; each
+// new building also opens more fenced ground (see expandedCamp).
+export const buildingOf = { weapon: 'forge', bag: 'storage', speed: 'sled', helper: 'hut', cashier: 'booth', hunter: 'lodge' };
+export const buildingNames = { forge: '鍛造台', storage: '肉倉', sled: '雪橇棚', hut: '搬運小屋', booth: '收銀亭', lodge: '獵人小屋' };
+export const campOf = s => expandedCamp(s.buildings.length);
+export function apply(s, key, events) {
   if (key === 'helper') s.helper = true;
   else if (key === 'cashier') s.cashier = true;
   else s.upgrades[key]++;
   if (key === 'hunter') s.hunters.push(newHunter(s.hunters.length));
+  const building = buildingOf[key];
+  if (building && !s.buildings.includes(building) && s.buildings.length < buildingSlots.length) {
+    const before = campOf(s); s.buildings.push(building); const after = campOf(s);
+    const slot = buildingSlots[s.buildings.length - 1];
+    if (events) {
+      events.push({ type: 'building', id: building, name: buildingNames[building], x: slot.x, z: slot.z });
+      if (before.minX !== after.minX || before.maxZ !== after.maxZ) events.push({ type: 'expand', camp: after });
+    }
+  }
 }
 export const newHunter = i => ({ x: 6 + i * .9, z: -4.5, cool: 0 });
 export const hunterStats = { speed: 4.6, damage: 10, interval: .6, reach: 1.7 };
 // Hunters walk to the nearest living prey and keep swinging; the meat they
 // drop is left for the player or the helper to carry home.
 export function updateHunters(s, dt, active, events, kill) {
+  const c = campOf(s);
   for (const h of s.hunters) {
     h.cool = Math.max(0, h.cool - dt);
     const mark = active.filter(b => b.hp > 0).sort((a, b) => dist(h, a) - dist(h, b))[0];
-    if (!mark) { move(h, { x: 6, z: -4.5 }, dt, hunterStats.speed); continue; }
-    if (dist(h, mark) > hunterStats.reach) move(h, mark, dt, hunterStats.speed);
+    if (!mark) { move(h, { x: 6, z: -4.5 }, dt, hunterStats.speed, c); continue; }
+    if (dist(h, mark) > hunterStats.reach) move(h, mark, dt, hunterStats.speed, c);
     else if (h.cool === 0) {
       h.cool = hunterStats.interval; mark.hp -= hunterStats.damage;
       events.push({ type: 'hit', id: mark.id, x: mark.x, z: mark.z, damage: hunterStats.damage, actor: 'hunter', from: { x: h.x, z: h.z } });
@@ -68,19 +83,19 @@ export function weaponStats(lvl) {
 export const newAssistant = () => ({ x: -6, z: 5.5, load: 0, phase: 'idle', timer: 0 });
 export const assistantCapacity = 15;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
-function move(worker, goal, dt, speed) {
-  const target = routeTarget(worker, goal);
+function move(worker, goal, dt, speed, c) {
+  const target = routeTarget(worker, goal, c);
   const d = dist(worker, target);
   if (d <= .4) return target === goal;
   const stride = Math.min(speed * dt, d);
-  const next = fenceStep(worker, { x: worker.x + (target.x - worker.x) / d * stride, z: worker.z + (target.z - worker.z) / d * stride });
+  const next = fenceStep(worker, { x: worker.x + (target.x - worker.x) / d * stride, z: worker.z + (target.z - worker.z) / d * stride }, c);
   worker.x = next.x; worker.z = next.z;
   return false;
 }
 // The helper walks to the nearest meat, fills up, and unloads at the table.
 export function updateAssistant(s, dt, table, stockLimit, events) {
   if (!s.helper) return;
-  const a = s.assistant;
+  const a = s.assistant, c = campOf(s);
   a.timer = Math.max(0, a.timer - dt);
   // Watchdog: if the helper makes no progress for a while, skip that piece for a bit.
   const moved = a.lastX === undefined ? 1 : Math.hypot(a.x - a.lastX, a.z - a.lastZ);
@@ -90,16 +105,16 @@ export function updateAssistant(s, dt, table, stockLimit, events) {
   if (a.stuck > 2.5 && loot && a.phase === 'collect') { a.avoid = { x: loot.x, z: loot.z, until: s.time + 10 }; a.stuck = 0; return; }
   if (a.load >= assistantCapacity || a.phase === 'return' || (!loot && a.load > 0)) {
     a.phase = 'return';
-    if (move(a, table, dt, 5) && a.timer === 0 && s.stock < stockLimit && a.load > 0) {
+    if (move(a, table, dt, 5, c) && a.timer === 0 && s.stock < stockLimit && a.load > 0) {
       a.load--; s.stock++; a.timer = .06;
       events.push({ type: 'deposit', actor: 'assistant', from: { x: a.x, z: a.z }, to: { x: table.x, z: table.z } });
     }
     if (a.load === 0) a.phase = 'idle';
   } else if (loot) {
     a.phase = 'collect';
-    if (move(a, loot, dt, 5) && a.timer === 0) {
+    if (move(a, loot, dt, 5, c) && a.timer === 0) {
       const i = s.drops.indexOf(loot);
       if (i >= 0) { s.drops.splice(i, 1); a.load++; a.timer = .05; events.push({ type: 'pickup', actor: 'assistant', from: { x: loot.x, z: loot.z }, to: { x: a.x, z: a.z } }); }
     }
-  } else { a.phase = 'idle'; move(a, { x: -6, z: 5.5 }, dt, 5); }
+  } else { a.phase = 'idle'; move(a, { x: -6, z: 5.5 }, dt, 5, c); }
 }
