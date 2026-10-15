@@ -104,7 +104,9 @@ export function updateAssistant(s, dt, table, stockLimit, events) {
   const loot = s.drops.filter(d => !(a.avoid && Math.hypot(d.x - a.avoid.x, d.z - a.avoid.z) < 2)).sort((x, y) => dist(a, x) - dist(a, y))[0];
   if (a.stuck > 2.5 && loot && a.phase === 'collect') { a.avoid = { x: loot.x, z: loot.z, until: s.time + 10 }; a.stuck = 0; return; }
   // Last resort on the way home: step back to the nearest gate mouth and retry.
-  if (a.stuck > 3 && a.phase === 'return') { const g = gatesOf(c).sort((p, q) => dist(a, p) - dist(a, q))[0]; a.x = g.x; a.z = g.z + (g.z < 0 ? -1 : 1); a.stuck = 0; }
+  if (a.stuck > 3 && a.stuck <= 6 && a.phase === 'return') { const g = gatesOf(c).sort((p, q) => dist(a, p) - dist(a, q))[0]; a.x = g.x; a.z = g.z + (g.z < 0 ? -1 : 1); a.stuck = 3.01 + .001; }
+  // Still stuck after the gate retreat: jump straight beside the goal so meat never sits on the helper's back forever.
+  if (a.stuck > 6) { if (a.phase === 'return' || a.load > 0) { a.x = table.x - 1.4; a.z = table.z; a.phase = 'return'; } else if (loot) { a.x = loot.x + .3; a.z = loot.z; } a.stuck = 0; }
   if (a.load >= assistantCapacity || a.phase === 'return' || (!loot && a.load > 0)) {
     a.phase = 'return';
     if (move(a, table, dt, 5, c) && a.timer === 0 && s.stock < stockLimit && a.load > 0) {
