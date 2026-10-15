@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createHuman, animateHuman, createBear, createTree, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
+import { createHuman, animateHuman, createBear, animatePrey, createTree, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
 import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf } from './src/sim.js';
 import { gates } from './src/camp.js';
 import { themes } from './src/stages.js';
@@ -139,6 +139,9 @@ function buildSlash(range, angle) {
   slashGroup.add(slashMesh, slashInner);
 }
 let bearViews = [];
+const shouts = []; const hitLines = ['嗷！', '好痛！', '欸不是', '別打臉！', '我是熊欸', '嗚嗚', '住手啊', '好冷又好痛'], killLines = ['我不玩了', '媽呀——', '再見…', '我的肉！', '先走了', '呃啊啊', '我會回來的', '這不公平'];
+function shout(x, z, lines) { if (shouts.length >= 8 || Math.random() < .35) return; const el = document.createElement('span'); el.className = 'shout'; el.textContent = lines[Math.floor(Math.random() * lines.length)]; $('labels').append(el); shouts.push({ el, p: new THREE.Vector3(x, 2.6, z), life: 1, vx: (Math.random() - .5) * .6 }); }
+function preyAt(x, z, id) { if (id !== undefined && bearViews[id]) return bearViews[id]; let best = null, bd = .9; for (const g of bearViews) { if (!g.visible) continue; const d = Math.hypot(g.position.x - x, g.position.z - z); if (d < bd) { bd = d; best = g; } } return best; }
 function buildBears() {
   for (const g of bearViews) scene.remove(g);
   const stage = stageOf(s);
@@ -152,7 +155,7 @@ function applyTheme() {
 }
 function switchState(next, message) {
   s = next; target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
-  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
+  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0; for (const sh of shouts) sh.el.remove(); shouts.length = 0;
   buildBears(); applyTheme(); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
 }
 buildBears();
@@ -304,8 +307,8 @@ function draw(t) {
       const events = step(s, 1 / 30, { x, z });
       for (const e of events) {
         if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; beep(220, .12, 'sawtooth', .025); }
-        else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); }
-        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); beep(160, .15, 'square', .03); }
+        else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); shout(e.x, e.z, hitLines); const g = preyAt(e.x, e.z, e.id); if (g) { const u = g.userData; u.hit = .4; const fx = e.from?.x ?? s.x, fz = e.from?.z ?? s.z; const d = Math.hypot(e.x - fx, e.z - fz) || 1; u.hitDir = { x: (e.x - fx) / d, z: (e.z - fz) / d }; } }
+        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); beep(160, .15, 'square', .03); shout(e.x, e.z, killLines); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
         else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); beep(700 + Math.min(40, s.meat) * 12, .05); } }
         else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) beep(520, .05); }
         else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) beep(980, .06); }
@@ -314,7 +317,7 @@ function draw(t) {
         else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); beep(1200, .04, 'triangle', .02); }
         else if (e.type === 'sale') { transfer('meat', { x: table.x + .8, z: table.z }, e.customer, 3); transfer('bill', e.customer, cashPoint, 2.4); }
         else if (e.type === 'built') { burst(e.x, e.z); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); beep(880, .3); beep(1320, .4); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
-        else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); }
+        else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
         else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); beep(880, .3); beep(1320, .5); save(); setTimeout(() => showStory('clear'), 900); }
       }
@@ -353,18 +356,28 @@ function draw(t) {
   // bears
   const herd = herdSize(s);
   bearViews.forEach((g, i) => {
-    const b = s.bears[i]; g.visible = b.hp > 0 && i < herd; if (!g.visible) return;
-    const to = new THREE.Vector3(b.x, 0, b.z); if (g.position.distanceTo(to) > 5) g.position.copy(to); else g.position.lerp(to, 1 - Math.exp(-dt * 18));
-    const dx = b.x - g.position.x, dz = b.z - g.position.z; if (Math.hypot(dx, dz) > .01) { const a = Math.atan2(dx, dz); g.rotation.y += Math.atan2(Math.sin(a - g.rotation.y), Math.cos(a - g.rotation.y)) * (1 - Math.exp(-dt * 8)); }
-    g.position.y = Math.abs(Math.sin(visualTime * 6 + i)) * .04;
-    const maxHp = preyOf(s, b).hp; const bar = g.userData.bar; bar.group.visible = b.hp < maxHp; bar.fill.scale.x = 1.4 * Math.max(0, b.hp) / maxHp; bar.fill.position.x = -(1.4 - bar.fill.scale.x) / 2; bar.group.rotation.y = -g.rotation.y + Math.PI / 4;
-    if (b.hp < g.userData.hp) g.userData.flash = .12; g.userData.hp = b.hp; g.userData.flash = Math.max(0, (g.userData.flash || 0) - dt);
-    const base = g.userData.kind === 'giant' ? 1.6 : g.userData.kind === 'wolf' ? .72 : 1; const sc = g.userData.flash > 0 ? 1.08 : 1; g.scale.set(base * sc, base * (2 - sc), base * sc);
+    const b = s.bears[i], u = g.userData;
+    const alive = b.hp > 0 && i < herd;
+    if (alive && !u.alive) { u.spawn = .5; u.dying = 0; g.position.set(b.x, 0, b.z); }
+    if (u.dying > 0 && u.dying < dt * 1.5 && u.poof) { u.poof = false; for (let k = 0; k < 6; k++) spark(g.position.x + (Math.random() - .5) * 1.4, g.position.z + (Math.random() - .5) * 1.4, '#ffffff', .5, .45, 1.5); }
+    u.alive = alive; g.visible = alive || u.dying > 0; if (!g.visible) return;
+    const to = new THREE.Vector3(b.x, 0, b.z); const before = g.position.clone();
+    if (alive) { if (g.position.distanceTo(to) > 5) g.position.copy(to); else g.position.lerp(to, 1 - Math.exp(-dt * 18)); }
+    const dx = b.x - g.position.x, dz = b.z - g.position.z; if (alive && Math.hypot(dx, dz) > .01) { const a = Math.atan2(dx, dz); g.rotation.y += Math.atan2(Math.sin(a - g.rotation.y), Math.cos(a - g.rotation.y)) * (1 - Math.exp(-dt * 8)); }
+    g.position.y = alive ? Math.abs(Math.sin(visualTime * 6 + i)) * .04 : 0;
+    const maxHp = preyOf(s, b).hp; const bar = u.bar; bar.group.visible = alive && b.hp < maxHp; bar.fill.scale.x = 1.4 * Math.max(0, b.hp) / maxHp; bar.fill.position.x = -(1.4 - bar.fill.scale.x) / 2; bar.group.rotation.y = -g.rotation.y + Math.PI / 4;
+    u.hp = b.hp;
+    const base = u.kind === 'giant' ? 1.6 : u.kind === 'wolf' ? .72 : 1; g.scale.setScalar(base);
+    animatePrey(g, dt, visualTime, before.distanceTo(g.position) > .003);
   });
 
   // loot on the ground
   const shown = Math.min(s.drops.length, config.dropLimit + 80);
-  for (let i = 0; i < shown; i++) { const d = s.drops[i]; place(dropMesh, i, d.x, .2, d.z, .62, .26, .5, i * 1.3); place(boneMesh, i, d.x + Math.cos(i * 1.3) * .12, .36, d.z - Math.sin(i * 1.3) * .12, .13, .07, .1); }
+  for (let i = 0; i < shown; i++) {
+    const d = s.drops[i]; const k = d.born === undefined ? 1 : Math.min(1, (s.time - d.born) / .45);
+    const x = d.ox === undefined ? d.x : d.ox + (d.x - d.ox) * k, z = d.oz === undefined ? d.z : d.oz + (d.z - d.oz) * k, y = .2 + Math.sin(k * Math.PI) * 1.4, sc = .5 + .5 * k;
+    place(dropMesh, i, x, y, z, .62 * sc, .26 * sc, .5 * sc, i * 1.3 + (1 - k) * 6); place(boneMesh, i, x + Math.cos(i * 1.3) * .12, y + .16, z - Math.sin(i * 1.3) * .12, .13 * sc, .07 * sc, .1 * sc);
+  }
   dropMesh.count = boneMesh.count = shown; dropMesh.instanceMatrix.needsUpdate = boneMesh.instanceMatrix.needsUpdate = true;
 
   // table stock and cash pile
@@ -404,6 +417,7 @@ function draw(t) {
     else { e.position.y += dt * u.rise; e.scale.multiplyScalar(1 + dt * u.grow); e.material.opacity = Math.max(0, u.life / u.max); }
     if (u.life <= 0) { scene.remove(e); effects.splice(i, 1); }
   }
+  for (let i = shouts.length - 1; i >= 0; i--) { const sh = shouts[i]; sh.life -= dt * .9; sh.p.y += dt * 1.6; sh.p.x += sh.vx * dt; const v = sh.p.clone().project(camera); sh.el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; sh.el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; sh.el.style.opacity = Math.min(1, sh.life * 2); sh.el.style.transform = `translate(-50%,-100%) rotate(${(sh.vx * 20).toFixed(1)}deg) scale(${(1 + (1 - sh.life) * .3).toFixed(2)})`; if (sh.life <= 0) { sh.el.remove(); shouts.splice(i, 1); } }
   for (const { el, p } of labels) { const v = p.clone().project(camera); el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; el.style.display = v.z > 1 ? 'none' : ''; }
   if (t > toastUntil) $('toast').style.opacity = 0;
   hudTime += dt; if (hudTime > .12 || s.coins !== lastCoins) { updateHud(); hudTime = 0; lastCoins = s.coins; }
@@ -413,5 +427,5 @@ function draw(t) {
 if (loaded.notice) $('save-note').textContent = loaded.notice;
 if (s.time > 0) $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`;
 buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle);
-if (location.search.includes('debug')) window.__polar = { state: () => s, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
+if (location.search.includes('debug')) window.__polar = { state: () => s, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), prey: i => { const g = bearViews[i]; const w = new THREE.Vector3(); g.userData.body.getWorldPosition(w); return { visible: g.visible, dying: g.userData.dying, spawn: g.userData.spawn, pos: [g.position.x, g.position.y, g.position.z], inner: [g.userData.inner.position.x, g.userData.inner.position.y, g.userData.inner.position.z], rot: [g.userData.inner.rotation.x, g.userData.inner.rotation.z], scale: g.userData.inner.scale.y, world: [w.x, w.y, w.z] }; }, slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
 updateHud(); requestAnimationFrame(draw);

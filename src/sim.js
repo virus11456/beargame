@@ -77,8 +77,8 @@ export function buy(s, key) {
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 function kill(s, b, events) {
   const kind = preyOf(s, b); s.kills++; b.respawn = kind.respawn;
-  for (let j = 0; j < kind.loot; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08) });
-  events.push({ type: 'kill', x: b.x, z: b.z, kind: kindOf(stageOf(s), b.id) });
+  for (let j = 0; j < kind.loot; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08), born: s.time, ox: b.x, oz: b.z });
+  events.push({ type: 'kill', id: b.id, x: b.x, z: b.z, kind: kindOf(stageOf(s), b.id), from: events.length ? events[events.length - 1].from : undefined });
 }
 
 export function step(s, dt, input = { x: 0, z: 0 }) {
@@ -105,7 +105,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
     for (const b of reach) {
       if (Math.abs(wrap(Math.atan2(b.x - s.x, b.z - s.z) - aim)) > weapon.angle / 2) continue;
       b.hp -= weapon.damage;
-      events.push({ type: 'hit', x: b.x, z: b.z, damage: weapon.damage });
+      events.push({ type: 'hit', id: b.id, x: b.x, z: b.z, damage: weapon.damage, from: { x: s.x, z: s.z } });
       if (b.hp <= 0) kill(s, b, events);
     }
   }
@@ -116,7 +116,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
     const mark = active.filter(b => b.hp > 0 && distance(towerPoint, b) < tower.range).sort((a, b) => distance(towerPoint, a) - distance(towerPoint, b))[0];
     if (mark) {
       s.towerTimer = tower.interval; mark.hp -= tower.damage;
-      events.push({ type: 'arrow', from: { ...towerPoint }, to: { x: mark.x, z: mark.z } }, { type: 'hit', x: mark.x, z: mark.z, damage: tower.damage });
+      events.push({ type: 'arrow', from: { ...towerPoint }, to: { x: mark.x, z: mark.z } }, { type: 'hit', id: mark.id, x: mark.x, z: mark.z, damage: tower.damage, from: { ...towerPoint } });
       if (mark.hp <= 0) kill(s, mark, events);
     }
   }
@@ -132,7 +132,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
     const d = distance(s, b);
     if (d < config.aggro && !inCamp(s)) {
       if (d > config.biteRange * kind.size * .8) { b.x += (s.x - b.x) / d * kind.speed * dt; b.z += (s.z - b.z) / d * kind.speed * dt; }
-      else if (b.cool <= 0 && biters < config.maxBiters) { biters++; s.hp -= kind.bite; b.cool = kind.biteInterval; events.push({ type: 'hurt', damage: kind.bite, x: b.x, z: b.z }); }
+      else if (b.cool <= 0 && biters < config.maxBiters) { biters++; s.hp -= kind.bite; b.cool = kind.biteInterval; events.push({ type: 'hurt', id: b.id, damage: kind.bite, x: b.x, z: b.z }); }
     } else {
       const roam = { x: b.hx + Math.sin(s.time * .21 + b.id * 2.1) * 1.6, z: b.hz + Math.cos(s.time * .17 + b.id * 1.7) * 1.2 };
       const home = distance(roam, b);

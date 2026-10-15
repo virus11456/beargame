@@ -44,7 +44,7 @@ export function updateHunters(s, dt, active, events, kill) {
     if (dist(h, mark) > hunterStats.reach) move(h, mark, dt, hunterStats.speed);
     else if (h.cool === 0) {
       h.cool = hunterStats.interval; mark.hp -= hunterStats.damage;
-      events.push({ type: 'hit', x: mark.x, z: mark.z, damage: hunterStats.damage, actor: 'hunter', from: { x: h.x, z: h.z } });
+      events.push({ type: 'hit', id: mark.id, x: mark.x, z: mark.z, damage: hunterStats.damage, actor: 'hunter', from: { x: h.x, z: h.z } });
       if (mark.hp <= 0) kill(s, mark, events);
     }
   }

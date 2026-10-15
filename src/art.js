@@ -50,23 +50,71 @@ const preyLooks = {
 };
 export function createBear(kind = 'bear') {
   const look = preyLooks[kind] || preyLooks.bear;
-  const g = new THREE.Group();
-  const body = part(g, look.fur, 0, .85, 0, .85, .62, 1.2, smooth);
-  part(g, look.belly, 0, .62, -.05, .75, .4, 1.05, smooth, false);
-  part(g, look.head, 0, 1.3, 1.05, .52, .45, .5, smooth, false);
-  part(g, look.snout, 0, 1.18, 1.5, .3, .21, .25, smooth, false);
-  part(g, '#2b3238', 0, 1.22, 1.72, .1, .08, .07, smooth, false);
-  for (const x of [-.34, .34]) { part(g, look.ear, x, 1.68, .88, kind === 'wolf' ? .11 : .13, kind === 'wolf' ? .24 : .15, .11, smooth, false); part(g, '#24303a', x * .72, 1.46, 1.42, .035, .04, .025, smooth, false); }
-  for (const x of [-.52, .52]) for (const z of [-.75, .7]) part(g, look.leg, x, .38, z, .48, .72, .52, rounded, false);
-  if (kind === 'giant') { part(g, '#c9d8e0', -.3, 1.45, .2, .5, .25, .7, smooth, false); part(g, '#c9d8e0', .35, 1.4, -.3, .45, .22, .6, smooth, false); }
-  if (kind === 'wolf') part(g, look.fur, 0, 1, -1.35, .16, .16, .7, smooth, false);
+  const g = new THREE.Group(), inner = new THREE.Group(); g.add(inner);
+  const body = part(inner, look.fur, 0, .85, 0, .85, .62, 1.2, smooth);
+  part(inner, look.belly, 0, .62, -.05, .75, .4, 1.05, smooth, false);
+  const head = new THREE.Group(); head.position.set(0, 1.3, 1.05); inner.add(head);
+  part(head, look.head, 0, 0, 0, .52, .45, .5, smooth, false);
+  part(head, look.snout, 0, -.12, .45, .3, .21, .25, smooth, false);
+  part(head, '#2b3238', 0, -.08, .67, .1, .08, .07, smooth, false);
+  for (const x of [-.34, .34]) { part(head, look.ear, x, .38, -.17, kind === 'wolf' ? .11 : .13, kind === 'wolf' ? .24 : .15, .11, smooth, false); part(head, '#24303a', x * .72, .16, .37, .035, .04, .025, smooth, false); }
+  const legs = [];
+  for (const x of [-.52, .52]) for (const z of [-.75, .7]) legs.push(part(inner, look.leg, x, .38, z, .48, .72, .52, rounded, false));
+  if (kind === 'giant') { part(inner, '#c9d8e0', -.3, 1.45, .2, .5, .25, .7, smooth, false); part(inner, '#c9d8e0', .35, 1.4, -.3, .45, .22, .6, smooth, false); }
+  if (kind === 'wolf') part(inner, look.fur, 0, 1, -1.35, .16, .16, .7, smooth, false);
+  // Own material copies so a hit can flash this animal red without tinting the herd.
+  const mats = [];
+  inner.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.emissive = new THREE.Color('#ff2a2a'); m.material.emissiveIntensity = 0; mats.push(m.material); } });
   g.scale.setScalar(look.scale);
   const bar = new THREE.Group(); bar.position.y = 2.25; g.add(bar);
   const back = part(bar, '#2a2a2a', 0, 0, 0, 1.4, .1, .12, unit, false);
   const fill = part(bar, kind === 'giant' ? '#ff8c3a' : '#ff4d4d', 0, .01, .02, 1.4, .12, .12, unit, false);
   bar.scale.setScalar(1 / look.scale);
-  g.userData.bar = { group: bar, back, fill }; g.userData.body = body; g.userData.kind = kind; return g;
+  g.userData = { bar: { group: bar, back, fill }, body, inner, head, legs, mats, kind, hit: 0, dying: 0, spawn: 0, lunge: 0, hitDir: { x: 0, z: 1 }, hp: 0 };
+  return g;
 }
+
+// Cartoon reaction animations driven by the renderer: squash, fling and
+// red flash when hit; a jump-bite when attacking; a somersault, belly-up
+// leg kicking and balloon deflate when killed; a bouncy pop when respawned.
+export function animatePrey(g, dt, time, moving) {
+  const u = g.userData, inner = u.inner;
+  inner.position.set(0, 0, 0); inner.rotation.set(0, 0, 0); inner.scale.set(1, 1, 1); u.head.rotation.set(0, 0, 0); u.head.scale.set(1, 1, 1);
+  let flash = 0;
+  if (u.spawn > 0) { u.spawn = Math.max(0, u.spawn - dt); const k = 1 - u.spawn / .5; const over = 1 + Math.sin(k * Math.PI) * .6; inner.scale.set(k * over, k * (2.2 - over) + .001, k * over); inner.position.y = Math.sin(k * Math.PI) * 1.2; }
+  if (u.hit > 0) {
+    u.hit = Math.max(0, u.hit - dt); const k = u.hit / .4, flinch = Math.sin(k * Math.PI), snap = k > .7 ? (k - .7) / .3 : 0;
+    const ry = g.rotation.y, lx = u.hitDir.x * Math.cos(ry) - u.hitDir.z * Math.sin(ry), lz = u.hitDir.x * Math.sin(ry) + u.hitDir.z * Math.cos(ry);
+    inner.position.x += lx * 1.3 * flinch; inner.position.z += lz * 1.3 * flinch; inner.position.y += flinch * .9;
+    inner.rotation.x += -lz * 1.1 * flinch; inner.rotation.z += lx * 1.1 * flinch;
+    inner.scale.set(1 + snap * .7 + flinch * .25, Math.max(.2, 1 - snap * .55 - flinch * .3), 1 + snap * .7 + flinch * .25);
+    u.head.rotation.x = -flinch * 1.3; u.head.scale.setScalar(1 + flinch * .35);
+    flash = Math.max(flash, k > .5 ? (k - .5) / .5 : 0);
+  }
+  if (u.lunge > 0) { u.lunge = Math.max(0, u.lunge - dt); const k = Math.sin((1 - u.lunge / .35) * Math.PI); inner.position.z += k * 1.2; inner.position.y += k * 1.1; inner.rotation.x += -k * .8; u.head.rotation.x += k * .9; u.head.scale.setScalar(1 + k * .6); inner.scale.set(1 - k * .15, 1 + k * .3, 1 - k * .15); }
+  if (u.dying > 0) {
+    u.dying = Math.max(0, u.dying - dt); const k = 1 - u.dying / 1.4;
+    if (k < .45) { // launched into the air with a double somersault
+      const a = k / .45; inner.position.y = Math.sin(a * Math.PI) * 3.2; inner.rotation.x = a * Math.PI * 4; inner.rotation.y = a * 2; inner.position.x = u.hitDir.x * a * 1.5; inner.position.z = u.hitDir.z * a * 1.5;
+      flash = Math.max(flash, 1 - a);
+    } else if (k < .8) { // belly up, legs kicking, head wobbling
+      const a = (k - .45) / .35; inner.rotation.z = Math.PI; inner.position.y = 1.35 + Math.abs(Math.sin(a * 22)) * .08; inner.position.x = u.hitDir.x * 1.5; inner.position.z = u.hitDir.z * 1.5;
+      u.legs.forEach((l, i) => l.rotation.x = Math.sin(time * 26 + i * 1.7) * 1.2); u.head.rotation.z = Math.sin(time * 15) * .5;
+      inner.scale.set(1 + Math.sin(a * Math.PI) * .25, 1 - Math.sin(a * Math.PI) * .2, 1 + Math.sin(a * Math.PI) * .25);
+      return finish(u, flash);
+    } else { // balloon deflate
+      const a = (k - .8) / .2; inner.rotation.z = Math.PI; inner.position.x = u.hitDir.x * 1.5; inner.position.z = u.hitDir.z * 1.5; inner.position.y = 1.35 * (1 - a);
+      inner.scale.set(1 + a * .9, Math.max(.05, 1 - a), 1 + a * .9); u.legs.forEach((l, i) => l.rotation.x = Math.sin(time * 26 + i) * 1.2 * (1 - a));
+      return finish(u, flash);
+    }
+    u.legs.forEach((l, i) => l.rotation.x = Math.sin(time * 26 + i) * 1.2);
+  } else {
+    const stride = moving ? Math.sin(time * 11 + g.id) * .45 : 0;
+    u.legs.forEach((l, i) => l.rotation.x = stride * (i % 2 ? 1 : -1) * ((i < 2) ? 1 : -1));
+  }
+  finish(u, flash);
+}
+function finish(u, flash) { for (const m of u.mats) m.emissiveIntensity = flash * .95; }
 
 // Dead winter tree: tapered trunk and a few bare branches.
 export function createTree(scale = 1) {

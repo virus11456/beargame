@@ -87,3 +87,5 @@ h1{font-size:46px;letter-spacing:5px;margin:18px 0}h1 span{display:block;font-si
 #story-go{background:#3fae5b;color:#fff;box-shadow:0 5px 0 #2b7f41}#story-next{background:#f0b23a;color:#4a2f05;box-shadow:0 5px 0 #b7801c}
 @media(max-width:600px){.story-card{padding:22px 20px 18px;border-radius:18px}.story-card h2{font-size:22px}.story-card p{font-size:13px}}
 @media(max-height:520px){.story-card{padding:12px 20px}.story-card h2{font-size:18px;margin:2px 0}.story-card p{font-size:12px;line-height:1.6;margin-bottom:8px}.story-goal{margin-bottom:8px}.story-actions button{padding:8px 12px}}
+
+.shout{position:absolute;pointer-events:none;background:#fff;border:2px solid #35505a;border-radius:14px 14px 14px 3px;padding:3px 9px;font-size:13px;font-weight:900;color:#35505a;white-space:nowrap;box-shadow:0 2px 0 #35505a33;transform:translate(-50%,-100%)}
