@@ -1,27 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fresh,step,serialize,restore,config} from '../src/sim.js';
-import {nextAction} from '../src/guide.js';
-import {SAVE_KEY,saveGame,loadGame,resetGame} from '../src/storage.js';
-const wait=(s,n)=>{for(let i=0;i<n*30;i++)step(s,1/30);};
-function memory(){const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)};}
-test('guide follows actual stock and returns to hunting after a sale',()=>{const s=fresh();s.kills=1;s.sold=1;assert.equal(nextAction(s).id,'hunt');s.bag=['raw'];assert.equal(nextAction(s).id,'cut');s.bag=['cut'];assert.equal(nextAction(s).id,'grill');s.bag=['meal'];assert.equal(nextAction(s).id,'sell');s.bag=[];s.outputs.grill=1;assert.equal(nextAction(s).id,'grill');});
-test('guide prioritizes recovery and remaining loot',()=>{const s=fresh();s.z=-5;s.hp=20;assert.equal(nextAction(s).id,'heal');s.hp=100;s.drops=[{x:1,z:-5,type:'raw'}];assert.equal(nextAction(s).id,'loot');});
-test('attack selects closest enemy, not array order',()=>{const s=fresh();s.z=-5;s.bears[0].x=2;s.bears[0].z=-5;s.bears[1].x=.5;s.bears[1].z=-5;step(s,1/30);assert.equal(s.bears[0].hp,70);assert.equal(s.bears[1].hp,56);});
-test('backpressure preserves ingredients when the downstream conveyor is full',()=>{const s=fresh();s.outputs.cut=config.stockLimit;s.queues.cut=['raw'];s.queues.grill=Array(config.queueLimit).fill('cut');s.outputs.grill=30;s.queues.sell=Array(config.queueLimit).fill('meal');s.timers.sell=0;step(s,1/30);assert.equal(s.outputs.cut,30);assert.deepEqual(s.queues.cut,['raw']);});
-test('uncollected loot prevents endless respawns without deleting loot',()=>{const s=fresh();s.drops=Array.from({length:128},()=>({x:-10,z:-10,type:'raw'}));s.bears[0].hp=0;s.bears[0].respawn=.01;wait(s,20);assert.equal(s.drops.length,128);assert.equal(s.bears[0].hp,0);s.drops.pop();wait(s,1);assert.equal(s.bears[0].hp,70);});
-test('corrupt cooldowns do not disable attacks permanently after reload',()=>{const s=fresh();s.attack=null;assert.deepEqual(restore(serialize(s)),fresh());});
-test('backup restores last valid state when primary save is damaged',()=>{const store=memory(),s=fresh();s.coins=12;saveGame(store,s);s.coins=24;saveGame(store,s);store.setItem(SAVE_KEY,'{broken');const loaded=loadGame(store);assert.equal(loaded.state.coins,12);assert.ok(loaded.notice.includes('備份'));});
-test('existing version two saves retain stock and timers',()=>{const store=memory(),s=fresh();s.time=55;s.attack=-4;s.transfer=-12;s.queues.grill=['cut'];s.timers.grill=.7;store.setItem(SAVE_KEY,serialize(s));assert.deepEqual(loadGame(store).state,s);});
-test('reset clears backup so old progress cannot reappear',()=>{const store=memory(),s=fresh();s.coins=12;saveGame(store,s);saveGame(store,s);resetGame(store,fresh());assert.equal(store.getItem(SAVE_KEY+'-backup'),null);assert.equal(loadGame(store).state.coins,0);});
-test('blocked browser storage is reported without crashing',()=>{assert.match(loadGame({getItem(){throw Error('blocked');}}).notice,/儲存/);});
+import { fresh, step, serialize, config, table, capacity } from '../src/sim.js';
+import { nextAction, padLabel } from '../src/guide.js';
+import { pads } from '../src/progression.js';
+import { SAVE_KEY, saveGame, loadGame, resetGame } from '../src/storage.js';
+const wait = (s, n) => { for (let i = 0; i < n * 30; i++) step(s, 1 / 30); };
+function memory() { const map = new Map(); return { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, v), removeItem: k => map.delete(k) }; }
 
-test('raw meat at sales counter gives destination guidance without consuming goods',async()=>{const {stationFeedback}=await import('../src/guide.js');const {stations}=await import('../src/sim.js');const s=fresh();s.x=6;s.z=4.7;s.bag=Array(12).fill('raw');const f=stationFeedback(s,stations[2]);assert.equal(f.mode,'wrong');assert.equal(f.target,'cut');assert.match(f.text,/只收餐點/);wait(s,3);assert.equal(s.bag.length,12);assert.equal(s.coins,0);s.x=-6;wait(s,3);assert.equal(s.bag.filter(x=>x==='raw').length,0);assert.equal(s.queues.cut.length+s.outputs.cut+s.queues.grill.length+s.outputs.grill+s.queues.sell.length+s.sold,12);});
-test('station guidance covers all input types, full queues and processing',async()=>{const {stationFeedback}=await import('../src/guide.js');const {stations}=await import('../src/sim.js');for(const st of stations){const s=fresh();s.bag=[st.input];assert.equal(stationFeedback(s,st).mode,'active');s.queues[st.id]=Array(config.queueLimit).fill(st.input);assert.equal(stationFeedback(s,st).mode,'wait');s.bag=[];assert.equal(stationFeedback(s,st).mode,'wait');}const s=fresh();s.bag=['cut'];assert.equal(stationFeedback(s,stations[2]).target,'grill');});
+test('guide follows the real loop: hunt → loot → table → cash → pad → hunt', () => {
+  const s = fresh(); assert.equal(nextAction(s).id, 'hunt');
+  s.x = 0; s.z = -21; s.drops = [{ x: 1, z: -21 }]; s.meat = 1; assert.equal(nextAction(s).id, 'loot');
+  s.meat = capacity(s); assert.equal(nextAction(s).id, 'table'); assert.equal(nextAction(s).x, table.x);
+  s.meat = 0; s.drops = []; s.cash = 20; assert.equal(nextAction(s).id, 'cash');
+  s.cash = 0; s.coins = 10; assert.equal(nextAction(s).id, 'pad'); assert.equal(nextAction(s).pad, 'bag');
+  s.coins = 0; assert.equal(nextAction(s).id, 'hunt');
+});
 
-test('48 cooked meals require player pickup and delivery before sales',()=>{const s=fresh();s.bag=Array(48).fill('raw');s.x=-6;s.z=4.7;wait(s,4);assert.equal(s.bag.length,0);s.x=0;s.z=8;wait(s,60);assert.equal(s.sold,0);assert.equal(s.outputs.grill,30);s.z=4.7;wait(s,20);assert.equal(s.bag.length,48);s.x=6;wait(s,4);s.x=0;s.z=8;wait(s,60);assert.equal(s.sold,48);assert.equal(s.pendingCash,576);});
-test('helper improves continuous line throughput',()=>{const base=fresh(),fast=fresh();for(const s of [base,fast]){s.queues.cut=Array(30).fill('raw');}fast.helper=true;wait(base,15);wait(fast,15);assert.ok(fast.outputs.grill>base.outputs.grill);});
+test('guide prioritizes recovery and never points at the locked helper', () => {
+  const s = fresh(); s.z = -12; s.hp = 20; assert.equal(nextAction(s).id, 'heal');
+  s.hp = 100; s.coins = 5000; s.upgrades = { weapon: 5, bag: 5, speed: 4, herd: 3 }; assert.equal(nextAction(s).id, 'hunt');
+  s.sold = 30; assert.equal(nextAction(s).pad, 'helper');
+});
 
-test('guide collects remaining meat before sending a partial bag home',()=>{const s=fresh();s.z=-6;s.bag=['raw'];s.drops=[{x:1,z:-6,type:'raw'}];assert.equal(nextAction(s).id,'loot');s.bag=Array(48).fill('raw');assert.equal(nextAction(s).id,'cut');});
-test('guide keeps unloading at the cutting station even with drops elsewhere',()=>{const s=fresh();s.x=-6;s.z=4.7;s.bag=['raw'];s.drops=[{x:1,z:-6,type:'raw'}];assert.equal(nextAction(s).id,'cut');});
-test('guide never directs players into locked hunting grounds',()=>{const s=fresh();s.drops=[{x:0,z:-22,type:'raw'}];assert.equal(nextAction(s).id,'hunt');s.expanded=true;assert.equal(nextAction(s).id,'loot');});
+test('pad labels show remaining price, lock state and max level', () => {
+  const s = fresh(); const weapon = pads.find(p => p.id === 'weapon'), helper = pads.find(p => p.id === 'helper');
+  assert.equal(padLabel(s, weapon).remaining, 45); s.paid.weapon = 20; assert.equal(padLabel(s, weapon).remaining, 25);
+  assert.equal(padLabel(s, helper).locked, true); s.upgrades.weapon = 5; assert.equal(padLabel(s, weapon).done, true);
+});
+
+test('backup restores last valid state when primary save is damaged', () => {
+  const store = memory(), s = fresh(); s.coins = 12; saveGame(store, s); s.coins = 24; saveGame(store, s);
+  store.setItem(SAVE_KEY, '{broken'); const loaded = loadGame(store);
+  assert.equal(loaded.state.coins, 12); assert.ok(loaded.notice.includes('備份'));
+});
+
+test('reset clears backup so old progress cannot reappear', () => {
+  const store = memory(), s = fresh(); s.coins = 12; saveGame(store, s); saveGame(store, s); resetGame(store, fresh());
+  assert.equal(store.getItem(SAVE_KEY + '-backup'), null); assert.equal(loadGame(store).state.coins, 0);
+});
+
+test('blocked browser storage is reported without crashing', () => {
+  assert.match(loadGame({ getItem() { throw Error('blocked'); } }).notice, /儲存/);
+});
+
+test('an old production-line save loads through storage and keeps its wallet', () => {
+  const old = { version: 4, coins: 300, earned: 300, kills: 9, sold: 25, upgrades: { weapon: 1, bag: 1, speed: 0 }, helper: false };
+  const loaded = loadGame({ getItem: k => k === SAVE_KEY ? JSON.stringify(old) : null });
+  assert.equal(loaded.state.version, 6); assert.equal(loaded.state.coins, 300); assert.equal(loaded.notice, '');
+});
+
+test('ground never floods with meat: respawns pause at the drop limit without deleting loot', () => {
+  const s = fresh(); s.drops = Array.from({ length: config.dropLimit }, () => ({ x: -30, z: -30 }));
+  s.bears[0].hp = 0; s.bears[0].respawn = .01; wait(s, 3);
+  assert.equal(s.drops.length, config.dropLimit); assert.equal(s.bears[0].hp, 0);
+  s.drops.pop(); wait(s, 1); assert.equal(s.bears[0].hp, config.bearHp);
+  assert.equal(serialize(s).length > 0, true);
+});

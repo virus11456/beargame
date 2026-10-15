@@ -1,105 +1,326 @@
-import {counter} from './src/customers.js';
-import {createHuman,animateHuman,food} from './src/art.js';
 import * as THREE from 'three';
-import {fresh,step,capacity,buy,price,stations,config,distance,cashPoint,worldBounds,canHire} from './src/sim.js';
-import {buildPads,buildDuration,weaponStats} from './src/progression.js';
-import {nextAction,stationFeedback,resourceNames} from './src/guide.js';
-import {loadGame,saveGame,resetGame} from './src/storage.js';
-const $=id=>document.getElementById(id);
-let loaded;try{loaded=loadGame(localStorage);}catch{loaded={state:fresh(),notice:'無法使用瀏覽器存檔。'};}
-let s=loaded.state;
-let running=false,sound=true,low=false,audio,keys={},joy={x:0,z:0},target=null,saveClock=0,toastUntil=0;
-const scene=new THREE.Scene();scene.background=new THREE.Color('#dcecf0');scene.fog=new THREE.Fog('#dcecf0',45,100);
-let renderer;try{renderer=new THREE.WebGLRenderer({canvas:$('game'),antialias:true,powerPreference:'high-performance'});}catch{$('save-note').textContent='無法啟動 WebGL，請使用支援 WebGL 2 的瀏覽器。';$('start').disabled=true;throw Error('WebGL unavailable');}
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.8));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.setClearColor('#dcecf0');renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
-const camera=new THREE.OrthographicCamera(-18,18,18,-18,.1,130);const follow=new THREE.Vector3(0,0,1);
-scene.add(new THREE.HemisphereLight(0xf3fcff,0x729aa5,1.8));const sun=new THREE.DirectionalLight(0xfff0d4,1.8);sun.position.set(-15,28,12);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-35,right:35,top:35,bottom:-35,near:.1,far:80});sun.shadow.normalBias=.04;scene.add(sun);sun.shadow.bias=-.00015;
-const mats=new Map();function mat(c){if(!mats.has(c))mats.set(c,new THREE.MeshStandardMaterial({color:c,roughness:.85,flatShading:true}));return mats.get(c);}
-const boxGeo=new THREE.BoxGeometry(1,1,1),sphereGeo=new THREE.IcosahedronGeometry(1,2);
-function box(parent,c,x,y,z,w,h,d){const m=new THREE.Mesh(boxGeo,mat(c));m.position.set(x,y,z);m.scale.set(w,h,d);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
-function ball(parent,c,x,y,z,w,h,d){const m=new THREE.Mesh(sphereGeo,mat(c));m.position.set(x,y,z);m.scale.set(w,h,d);m.castShadow=true;parent.add(m);return m;}
-function cone(parent,c,x,y,z,r,h){const m=new THREE.Mesh(new THREE.ConeGeometry(r,h,6),mat(c));m.position.set(x,y,z);m.castShadow=true;parent.add(m);return m;}
-function ring(x,z,c,r=1.3){const m=new THREE.Mesh(new THREE.RingGeometry(r-.07,r,48),new THREE.MeshBasicMaterial({color:c,side:THREE.DoubleSide,transparent:true,opacity:.8}));m.rotation.x=-Math.PI/2;m.position.set(x,.08,z);scene.add(m);return m;}
-box(scene,'#e9f3f4',0,-.5,-7,75,1,80);box(scene,'#d7e8e8',0,-.05,5,24,.15,15);box(scene,'#b78c63',0,.01,4,22,.1,12);for(let i=0;i<24;i++)box(scene,i%3===0?'#cfaa7c':'#dab98d',0,.08,-1.75+i*.5,21.9,.08,.46);
-// Frozen stream and snow banks.
-box(scene,'#aed6e2',-22,-.01,-8,8,.12,60);for(let i=0;i<38;i++){const x=Math.sin(i*17.4)*29,z=-27+Math.cos(i*8.1)*26;if(Math.abs(x)<15&&z>-28&&z<14)continue;ball(scene,'#f5faf9',x,.2,z,2.5,.9,2);if(i%2===0){box(scene,'#806a55',x,1,z,.4,2,.4);cone(scene,'#507e7b',x,2.2,z,1.6,3);cone(scene,'#eaf5f5',x,2.9,z,1.35,2.3);cone(scene,'#f9fcf8',x,4,z,.8,1.8);}}
-let fenceParent=scene;function fence(x,z,alongX=true){box(fenceParent,'#987e61',x,.65,z,.22,1.3,.22);box(fenceParent,'#eaf2ed',x,1.34,z,.3,.13,.3);for(const y of [.45,.95])box(fenceParent,'#bba080',x+(alongX?1:0),y,z+(alongX?0:1),alongX?2:.15,.13,alongX?.15:2);}
-for(let x=-11;x<11;x+=2){if(Math.abs(x)>2)fence(x,-.3);fence(x,11);}for(let z=0;z<11;z+=2)fence(-11,z,false);const oldEastFence=new THREE.Group();scene.add(oldEastFence);fenceParent=oldEastFence;for(let z=0;z<11;z+=2)fence(11,z,false);fenceParent=scene;
-const eastWing=new THREE.Group();scene.add(eastWing);box(eastWing,'#b78c63',15,.01,4,8,.1,12);for(let i=0;i<24;i++)box(eastWing,i%3===0?'#cfaa7c':'#dab98d',15,.08,-1.75+i*.5,7.9,.08,.46);fenceParent=eastWing;for(let z=0;z<11;z+=2)fence(19,z,false);for(let x=11;x<19;x+=2){fence(x,-.3);fence(x,11);}fenceParent=scene;
-const extension=new THREE.Group();scene.add(extension);box(extension,'#eee9d8',8,.05,-3,6,.2,4);box(extension,'#667e75',8,.9,-3,2,1.7,1.5);box(extension,'#404c4d',8,1.82,-3,2.2,.15,1.6);for(let i=0;i<5;i++)box(extension,'#a3b1a5',7.2+i*.4,1.93,-3,.06,.05,1.5);for(let i=0;i<3;i++)cone(extension,'#ffb84d',7.4+i*.6,2.03,-3,.18,.4);box(extension,'#546360',9,2.5,-3.5,.35,2.2,.35);extension.position.set(7,0,6);extension.visible=s.expanded;
-const human=createHuman;
-const player=human();scene.add(player);const pack=new THREE.Group();player.add(pack);box(player,'#725740',0,.9,-.45,.65,.65,.3);const spear=box(player,'#7e684e',.66,1,0,.08,.08,2.8);const spearHead=cone(player,'#e5eceb',.66,1,1.5,.13,.4);spearHead.rotation.x=Math.PI/2;
-const bow=new THREE.Group();player.add(bow);for(const side of [-1,1]){const limb=box(bow,'#925a39',.7,1+side*.35,.4,.1,.7,.12);limb.rotation.x=side*.5;}box(bow,'#e1d7b9',.7,1,.6,.035,1.2,.035);
-const crossbow=new THREE.Group();player.add(crossbow);box(crossbow,'#445c6a',.65,1,.3,.25,.24,1.3);box(crossbow,'#9c7345',.65,1,.7,1.1,.13,.14);box(crossbow,'#e5e4cc',.65,1,.4,1,.035,.035);
-const weaponPivot=new THREE.Group();player.add(weaponPivot);for(const item of [spear,spearHead,bow,crossbow])weaponPivot.add(item);let facing=0,attackVisual=0,attackAim=0,visualTime=0;
-const bearViews=s.bears.map(()=>{const g=new THREE.Group();ball(g,'#f8f6e9',0,1,0,.88,.78,1.35);ball(g,'#fffdf2',0,1.5,.95,.69,.6,.65);ball(g,'#e6e8e2',0,1.32,1.52,.4,.27,.3);ball(g,'#344750',0,1.39,1.77,.15,.12,.1);for(const x of [-.4,.4]){ball(g,'#fffdf1',x,1.99,.91,.19,.23,.19);ball(g,'#253c48',x*.8,1.65,1.44,.055,.065,.045);for(const z of [-.75,.65])box(g,'#eeeede',x,.45,z,.42,.7,.47);}scene.add(g);return g;});
-const bearBars=bearViews.map(g=>{const back=box(g,'#d2dcd8',0,2.6,0,1.3,.09,.12);const fill=box(g,'#d47a63',0,2.61,.01,1.3,.1,.13);return {back,fill};});
-const labels=[];function label(text,x,y,z){const el=document.createElement('div');el.className='label';el.innerHTML=text;$('labels').append(el);labels.push({el,p:new THREE.Vector3(x,y,z)});return el;}
-const waypoint=ring(0,0,'#e5ad55',1.2);
-$('navigate').onclick=()=>{if(!running)return;const action=nextAction(s);target={x:action.x,z:action.z};};
-const stationLabels={},stationStocks={};
-for(const x of [-3]){box(scene,'#6a8383',x,1.35,3,3,.22,.7);for(let j=0;j<7;j++)box(scene,'#a5b6a9',x-1.2+j*.4,1.49,3,.09,.06,.65);}const grillFlames=[];
-for(const st of stations){const g=new THREE.Group();g.position.set(st.x,0,st.z);scene.add(g);const c=st.id==='cut'?'#709d9e':st.id==='grill'?'#c87550':'#dfb66f';for(const x of [-1,1])for(const z of [-.4,.4])box(g,'#6b665b',x,.5,z,.18,1,.18);box(g,c,0,.9,0,2.7,.8,1.4);box(g,'#f3e4ca',0,1.4,0,3,.15,1.65);
-if(st.id==='cut'){box(g,'#b68d62',0,1.52,0,1.8,.12,.85);box(g,'#d9655b',-.3,1.65,0,.65,.22,.5);box(g,'#dce6e6',.6,1.8,0,.08,.5,.45);}if(st.id==='grill'){box(g,'#3e4c4d',0,1.52,0,2,.15,1);for(let j=0;j<7;j++)box(g,'#7d8b84',-.9+j*.3,1.62,0,.05,.05,1);for(let j=0;j<3;j++)grillFlames.push(cone(g,'#ffb84d',-.65+j*.65,1.72,0,.19,.45));box(g,'#566563',1.1,2,-.4,.35,1.8,.35);}if(st.id==='sell'){for(const x of [-1.35,1.35])box(g,'#7a6e55',x,2.25,0,.12,2,.12);box(g,'#347e82',0,3.2,-.35,3.3,.22,1.3);for(let j=0;j<5;j++)box(g,j%2?'#fff0cb':'#378b8c',-1.25+j*.63,3.05,.35,.63,.35,.12);}
-stationStocks[st.id]=Array.from({length:60},(_,i)=>food(g,st.id==='cut'?'cut':'meal',-.9+(i%4)*.55,1.7+Math.floor(i/4)*.18,.2,.46,.15,.4));
-ring(st.x,st.z+1.7,c);stationLabels[st.id]=label(st.name,st.x,st.id==='sell'?3.6:2.7,st.z);const stationLabel=stationLabels[st.id];stationLabel.classList.add('station-label');stationLabel.setAttribute('role','button');stationLabel.tabIndex=0;stationLabel.setAttribute('aria-label',`前往${st.name}，接收${resourceNames[st.input]}`);const navigate=()=>{if(running&&$('shop').hidden)target={x:st.x,z:st.z+1.7};};stationLabel.onclick=navigate;stationLabel.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();navigate();}};}
-label('獵熊雪原<small>靠近北極熊自動攻擊</small>',0,.5,-4);ring(0,-2,'#c3a96e',1);const expansionLabel=label('北方獵場已開放',0,.4,-18);
-const buildViews=buildPads.map(p=>{const marker=ring(p.x,p.z,'#efc36c',1.15);const tile=box(scene,'#ead8b1',p.x,.03,p.z,2.6,.05,2.6);const el=label(p.name,p.x,.6,p.z);el.classList.add('build-label');el.setAttribute('role','button');el.tabIndex=0;const navigate=()=>{if(running&&$('shop').hidden)target={x:p.x,z:p.z};};el.onclick=navigate;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();navigate();}};return {pad:p,marker,tile,el};});
-const customers=Array.from({length:5},(_,i)=>{const g=human(['#788f96','#a791ac','#d4af74','#739990','#b77762'][i]);g.scale.setScalar(.95);g.userData.meal=food(g,'meal',0,1,.65,.65,.25,.5);g.userData.meal.visible=false;scene.add(g);return g;});const helper=human('#668e79');scene.add(helper);helper.visible=s.helper;const helperLoad=Array.from({length:12},(_,i)=>box(helper,'#d86f65',i%2?-.2:.2,1.1+Math.floor(i/2)*.2,-.5,.4,.18,.4));const helperLabel=label('搬運助手',-9,2.7,-1);const helperAnchor=labels[labels.length-1];
-const cashLabel=label('收款區',cashPoint.x,1.1,cashPoint.z);cashLabel.classList.add('station-label');cashLabel.tabIndex=0;cashLabel.setAttribute('role','button');const goCash=()=>{if(running&&$('shop').hidden)target={...cashPoint};};cashLabel.onclick=goCash;cashLabel.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();goCash();}};ring(cashPoint.x,cashPoint.z,'#76ba87',1.5);
-for(let i=0;i<5;i++)ring(counter.x,counter.z+i*1.1,'#f5e6c3',.38);
-const customerLabels=s.customers.people.map(c=>{const el=label('烤肉 ×1',c.x,2.7,c.z);el.classList.add('customer-label');return labels[labels.length-1];});
-const savings=Array.from({length:90},(_,i)=>box(scene,'#79b94f',9.3+(i%3)*.35,.3+Math.floor(i/3)*.11,6.8,.3,.09,.5));
-const dropGroup=new THREE.Group(),effects=new THREE.Group();scene.add(dropGroup,effects);const dropMeshes=[];let lastBag='',lastSold=s.sold;const colors={raw:'#d86f65',cut:'#ed9c87',meal:'#995439'};
-const transfers=[];function transfer(resource,from,to,customerId=null){if(transfers.length>=48)return;const mesh=customerId!==null?food(scene,'meal',from.x,1.6,from.z):box(scene,resource==='coin'?'#efbf45':resource==='arrow'?'#70543c':colors[resource],from.x,1.5,from.z,resource==='arrow'?.07:.4,resource==='arrow'?.07:.18,resource==='arrow'?.8:.4);transfers.push({resource,customerId,mesh,from:new THREE.Vector3(from.x,customerId!==null?1.6:1.5,from.z),to:new THREE.Vector3(to.x,1.5,to.z),t:0});}
-const floaters=[];function floating(text,x,z,type){if(floaters.length>24){floaters.shift().el.remove();}const el=document.createElement('span');el.className='floating '+type;el.textContent=text;$('labels').append(el);floaters.push({el,p:new THREE.Vector3(x,2.5,z),life:1});}
-function beep(f=500){if(!sound||!audio)return;const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.setValueAtTime(f,audio.currentTime);o.frequency.exponentialRampToValueAtTime(f*.65,audio.currentTime+.09);g.gain.setValueAtTime(.045,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.1);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+.11);}
-function toast(t){$('toast').textContent=t;$('toast').style.opacity=1;toastUntil=performance.now()+2600;}
-function save(){try{saveGame(localStorage,s);}catch{$('save-note').textContent='瀏覽器不允許儲存，進度只保留於本次遊玩。';}}
-function stop(){running=false;keys={};joy={x:0,z:0};target=null;$('stick').style.transform='';$('menu').hidden=false;$('start').innerHTML='繼續經營 <span>→</span>';save();}
-$('start').onclick=()=>{try{audio??=new(window.AudioContext||window.webkitAudioContext)();audio.resume();}catch{}running=true;$('menu').hidden=true;};$('pause').onclick=stop;$('sound').onclick=()=>{sound=!sound;$('sound').textContent=`音效：${sound?'開':'關'}`;};$('quality').onclick=()=>{low=!low;renderer.shadowMap.enabled=!low;renderer.setPixelRatio(low?1:Math.min(devicePixelRatio,1.8));$('quality').textContent=`畫質：${low?'省電':'標準'}`;};$('reset').onclick=()=>{if(confirm('確定清除目前的營地進度，重新開始？')){s=fresh();target=null;for(const f of transfers)scene.remove(f.mesh);transfers.length=0;try{resetGame(localStorage,s);}catch{}lastBag='reset';lastSold=0;keys={};clearJoy();acc=0;saveClock=0;for(const f of floaters)f.el.remove();floaters.length=0;$('shop').hidden=true;running=true;$('menu').hidden=true;follow.set(0,0,5.46);renderShop();updateHud();toast('已建立新營地，從第一份生肉開始！');}};
-$('restart').onclick=()=>$('reset').onclick();
-$('open-shop').onclick=()=>{$('shop').hidden=!$('shop').hidden;keys={};target=null;clearJoy();renderShop();};$('close-shop').onclick=()=>$('shop').hidden=true;
-const upgrades=[['weapon','狩獵裝備','Lv.2 獵弓 · Lv.4 十字弓，射程提升'],['bag','加高背包','每級增加 24 格容量'],['speed','生產設備','每級提高 30% 處理速度'],['expand','擴建營地','新獵場、第二烤爐、售價提升'],['helper','聘請搬運助手','走入獵場拾肉回營，並提升生產速度']];
-let shopSignature='';
-function renderShop(){const sig=JSON.stringify([s.coins,s.upgrades,s.expanded,s.helper,s.sold>=20]);if(sig===shopSignature)return;shopSignature=sig;const root=$('upgrades');root.replaceChildren();for(const [key,name,desc]of upgrades){const done=key==='expand'?s.expanded:key==='helper'?s.helper:s.upgrades[key]>=5;const locked=key==='helper'&&!canHire(s);const b=document.createElement('button');b.className='upgrade';b.disabled=done||locked||s.coins<price(s,key);b.innerHTML=`<span>${name}${s.upgrades[key]!==undefined?' Lv.'+s.upgrades[key]:''}<small>${desc}</small></span><b>${done?'已完成':locked?'擴建＋售出 20 份':'● '+price(s,key)}</b>`;b.onclick=()=>{if(buy(s,key)){beep(760);toast(`${name}完成！`);save();renderShop();}};root.append(b);}}
-const ray=new THREE.Raycaster(),plane=new THREE.Plane(new THREE.Vector3(0,1,0),0),point=new THREE.Vector3();$('game').onpointerdown=e=>{if(!running||!$('shop').hidden)return;ray.setFromCamera(new THREE.Vector2(e.clientX/innerWidth*2-1,-e.clientY/innerHeight*2+1),camera);if(ray.ray.intersectPlane(plane,point))target={x:Math.max(-14,Math.min(worldBounds(s).maxX,point.x)),z:Math.max(s.expanded?-27:-17,Math.min(12,point.z))};};
-let joyId=null;function moveJoy(e){const r=$('joystick').getBoundingClientRect(),x=e.clientX-r.left-r.width/2,z=e.clientY-r.top-r.height/2,d=Math.max(36,Math.hypot(x,z));joy={x:x/d,z:z/d};$('stick').style.transform=`translate(${joy.x*30}px,${joy.z*30}px)`;target=null;}
-$('joystick').onpointerdown=e=>{if(!running||!$('shop').hidden)return;joyId=e.pointerId;$('joystick').setPointerCapture(e.pointerId);moveJoy(e);};$('joystick').onpointermove=e=>{if(e.pointerId===joyId)moveJoy(e);};function clearJoy(){joyId=null;joy={x:0,z:0};$('stick').style.transform='';}$('joystick').onpointerup=clearJoy;$('joystick').onpointercancel=clearJoy;$('joystick').onlostpointercapture=clearJoy;
-addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();keys[e.key.toLowerCase()]=true;target=null;if(e.key==='Escape')stop();});addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);addEventListener('blur',()=>{if(running)stop();});document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});addEventListener('pagehide',save);
-$('game').addEventListener('webglcontextlost',e=>{e.preventDefault();stop();toast('畫面暫時中斷，進度已儲存。請重新整理。');});
-function resize(){renderer.setSize(innerWidth,innerHeight,false);const a=innerWidth/innerHeight,h=a<.8?12.5:a<1.35?11.5:10;camera.left=-h*a;camera.right=h*a;camera.top=h;camera.bottom=-h;camera.updateProjectionMatrix();}addEventListener('resize',resize);resize();
-let prev=performance.now(),acc=0,hudTime=0;
-function updateHud(){ $('coins').textContent=s.coins;cashLabel.innerHTML=`收款區 · ${s.pendingCash}<small>${s.pendingCash?'靠近自動收錢':'等客人取餐付款'}</small>`;$('bag').textContent=`背包 ${s.bag.length} / ${capacity(s)}`;const n=t=>s.bag.filter(v=>v===t).length;$('items').textContent=`生肉 ${n('raw')}　肉排 ${n('cut')}　餐點 ${n('meal')}`;$('health').style.width=s.hp+'%';const action=nextAction(s);$('objective').textContent=action.text;$('navigate').textContent=`前往${action.name} ↗`;
- const milestone=s.helper&&s.expanded?6:s.expanded?5:s.sold?4:s.bag.includes('meal')?3:s.bag.includes('cut')||s.queues.grill.length?2:s.kills?1:0;
- $('progress').style.width=milestone/6*100+'%';$('level').textContent=s.expanded?'冰原商站 · 東側新區':'初次開張 · 獨自經營';$('development').textContent=!s.expanded?`下一階段：東側擴建 ${s.coins}/720` : !s.helper?`下一階段：搬運助手 ${s.coins}/960 · 售出 ${Math.min(20,s.sold)}/20`:'東側新區已建成 · 繼續升級設備';
- $('weapon-info').textContent=`${weaponStats(s.upgrades.weapon).name} Lv.${s.upgrades.weapon} · 射程 ${weaponStats(s.upgrades.weapon).range}`;
- $('stats').textContent=`售出 ${s.sold} 份 · 累計收入 ${s.earned} 金幣`;
- $('production').textContent=`加工 ${s.queues.cut.length+s.outputs.cut} → 烹調 ${s.queues.grill.length+s.outputs.grill} → 待售 ${s.queues.sell.length}`;
- $('bag').classList.toggle('full',s.bag.length>=capacity(s));
- let feedbackMode='';let hint=s.bag.length>=capacity(s)?'背包已滿，先送貨到對應工作站':s.hp<30?'生命偏低，回營地可自動恢復':'';
- for(const st of stations){const blocked=st.output&&s.outputs[st.id]>=config.stockLimit;const pct=s.queues[st.id].length?Math.min(100,s.timers[st.id]/st.seconds*100):0;
- stationLabels[st.id].classList.toggle('recommended',action.id===st.id);stationLabels[st.id].innerHTML=`${stations.indexOf(st)+1} · ${st.name}<span class="station-input">接收${resourceNames[st.input]}${st.id==='grill'?' · 領取烤肉':st.output?' → '+resourceNames[st.output]:' → 客人取餐'}</span>`+`<small>${st.id==='sell'?`待售 ${s.queues.sell.length} · 排隊 ${s.customers.queue.length} 人 · 每份 ${s.expanded?16:12} 金幣`:`待處理 ${s.queues[st.id].length} · 完成 ${s.outputs[st.id]}`}</small><div class="station-progress"><i style="width:${pct}%"></i></div>`;
- if(distance(s,{x:st.x,z:st.z+1.7})<config.stationRange){const feedback=stationFeedback(s,st);hint=feedback.text;feedbackMode=feedback.mode;}
- }
- for(const {pad,el} of buildViews){const done=pad.id==='expand'?s.expanded:pad.id==='helper'?s.helper:s.upgrades[pad.id]>=5;const locked=pad.id==='helper'&&!canHire(s);const active=s.buildHold.id===pad.id;const pct=active?Math.min(100,s.buildHold.t/buildDuration*100):0;el.hidden=done;el.classList.toggle('affordable',s.coins>=price(s,pad.id));el.innerHTML=`${pad.name}<small>${locked?'先擴建並售出 20 份':pad.detail}</small><b>● ${price(s,pad.id)}</b><small>${active&&s.buildHold.latched?'離開標記後可再次升級':'站入標記 1.8 秒建造'}</small><div class="station-progress"><i style="width:${pct}%"></i></div>`;if(active&&!done){hint=locked?'助手需先擴建營地，並累計售出 20 份':s.buildHold.latched?'升級完成！離開標記後可再次升級':s.coins<price(s,pad.id)?`${pad.name}還差 ${price(s,pad.id)-s.coins} 金幣`:`正在建造${pad.name}…離開即可取消`;feedbackMode='active';}}
- $('context-hint').dataset.mode=feedbackMode;$('context-hint').textContent=hint;$('context-hint').hidden=!hint;
- if(!$('shop').hidden)renderShop();}
-function draw(t){requestAnimationFrame(draw);let dt=Math.min((t-prev)/1000,.1);prev=t;if(running&&$('shop').hidden){acc+=dt;while(acc>=1/30){let x=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+joy.x,z=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+joy.z;if(target&&Math.hypot(x,z)<.1){const d=Math.hypot(target.x-s.x,target.z-s.z);if(d>.3){x=(target.x-s.x)/d;z=(target.z-s.z)/d;}else target=null;}if(Math.hypot(x,z)>.1)facing=Math.atan2(x,z);const events=step(s,1/30,{x,z});for(const e of events){if((e.type==='deposit'||e.type==='pickup')&&e.from)transfer(e.resource,e.from,e.to);if(e.type==='deposit'&&e.from?.x===s.x&&e.from?.z===s.z)beep(400);if(e.type==='pickup')beep(640+s.bag.length*24);if(e.type==='built'){toast(`${e.name}完成！`);beep(1000);save();renderShop();}if(e.type==='hit'&&e.weapon!=='spear')transfer('arrow',e.from,{x:e.x,z:e.z});if(e.type==='hurt')floating('−9',s.x,s.z,'damage');if(e.type==='hit'){attackVisual=.24;attackAim=Math.atan2(e.x-s.x,e.z-s.z);if(Math.hypot(x,z)<.1)facing=attackAim;floating(`−${e.damage}`,e.x,e.z,'damage');beep(140);const puff=ball(effects,'#ffffff',e.x,1.8,e.z,.4,.4,.4);puff.userData.life=.3;}if(e.type==='collectCash'){beep(1050);floating(`收取 +${e.value}`,s.x,s.z,'coin');transfer('coin',e.from,e.to);}if(e.type==='handoff')transfer('meal',{x:e.x,z:e.z+.7},e.customer,e.customerId);if(e.type==='sale'){beep(880);floating(`付款 ${e.value}`,e.x,e.z,'coin');transfer('coin',e.customer,{x:9.5,z:6.8});}if(e.type==='rescue'){target=null;toast('已返回營地恢復，背包物資保留。');}}acc-=1/30;}saveClock+=dt;if(saveClock>8){save();saveClock=0;}}else acc=0;
- const weapon=weaponStats(s.upgrades.weapon);spear.visible=spearHead.visible=weapon.tier==='spear';bow.visible=weapon.tier==='bow';crossbow.visible=weapon.tier==='crossbow';
- if(running&&$('shop').hidden){visualTime+=dt;attackVisual=Math.max(0,attackVisual-dt);}const visualTarget=new THREE.Vector3(s.x,0,s.z);if(player.position.distanceTo(visualTarget)>5)player.position.copy(visualTarget);else player.position.lerp(visualTarget,1-Math.exp(-dt*22));player.rotation.y+=Math.atan2(Math.sin(facing-player.rotation.y),Math.cos(facing-player.rotation.y))*(1-Math.exp(-dt*18));const swing=attackVisual>0?Math.sin((1-attackVisual/.24)*Math.PI):0;weaponPivot.rotation.y=attackVisual>0?attackAim-player.rotation.y-swing*.65:0;weaponPivot.position.z=swing*.35;follow.lerp(new THREE.Vector3(player.position.x*.72,0,player.position.z*.78),1-Math.exp(-dt*4));camera.position.set(follow.x,26,follow.z+26);camera.lookAt(follow);
- bearViews.forEach((g,i)=>{const b=s.bears[i];g.visible=b.hp>0&&(i<6||s.expanded);g.position.lerp(new THREE.Vector3(b.x,Math.sin(visualTime*4+i)*.035,b.z),1-Math.exp(-dt*20));const dx=b.x-g.position.x,dz=b.z-g.position.z;if(Math.hypot(dx,dz)>.01)g.rotation.y+=Math.atan2(Math.sin(Math.atan2(dx,dz)-g.rotation.y),Math.cos(Math.atan2(dx,dz)-g.rotation.y))*(1-Math.exp(-dt*8));bearBars[i].fill.scale.x=1.3*Math.max(0,b.hp)/config.bearHp;bearBars[i].fill.position.x=-(1.3-bearBars[i].fill.scale.x)/2;bearBars[i].back.visible=b.hp<config.bearHp;bearBars[i].fill.visible=b.hp<config.bearHp;g.scale.setScalar(b.hp<config.bearHp?1+Math.sin(s.time*25)*.015:1);});
- const action=nextAction(s);waypoint.position.set(action.x,.14,action.z);waypoint.scale.setScalar(1+Math.sin(s.time*4)*.08);for(const st of stations)stationStocks[st.id].forEach((m,i)=>m.visible=i<Math.min(60,st.output?s.outputs[st.id]:s.queues.sell.length));
- const sig=s.bag.join();if(sig!==lastBag){pack.clear();s.bag.forEach((type,i)=>{food(pack,type,i%2?-.22:.22,1.15+Math.floor(i/2)*.22,-.53,.42,.19,.5);});lastBag=sig;}pack.rotation.z=Math.sin(s.time*7)*.025;
- while(dropMeshes.length<s.drops.length)dropMeshes.push(food(dropGroup,'raw',0,0,0,.55,.23,.5));dropMeshes.forEach((m,i)=>{m.visible=i<s.drops.length;if(m.visible){m.position.set(s.drops[i].x,.3+Math.sin(s.time*3+i)*.06,s.drops[i].z);m.rotation.y=s.time*.5;}});
- for(let i=effects.children.length-1;i>=0;i--){const e=effects.children[i];e.userData.life-=dt;e.position.y+=dt*3;e.scale.multiplyScalar(1+dt*3);if(e.userData.life<0)effects.remove(e);}
- customers.forEach((g,i)=>{const c=s.customers.people[i];const dx=c.x-g.position.x,dz=c.z-g.position.z;if(Math.hypot(dx,dz)>.001)g.rotation.y=Math.atan2(dx,dz);g.position.set(c.x,0,c.z);if(c.phase==='queue'||(c.departureDelay??0)>0)g.rotation.y=Math.PI;g.userData.meal.visible=c.carrying&&(c.departureDelay??0)===0;customerLabels[i].p.set(c.x-1.2,1.9,c.z);customerLabels[i].el.hidden=c.id!==s.customers.queue[0]&&(c.departureDelay??0)<=0;customerLabels[i].el.textContent=c.carrying?'接餐':s.queues.sell.length?'烤肉 ×1':'等待烤肉';});
+import { createHuman, animateHuman, createBear, createTree, part, material, rounded, unit, smooth } from './src/art.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, herdSize, pads, price, level, canHire, weaponStats } from './src/sim.js';
+import { padRadius, assistantCapacity } from './src/progression.js';
+import { nextAction, padLabel } from './src/guide.js';
+import { loadGame, saveGame, resetGame } from './src/storage.js';
+import { counter, customerCount } from './src/customers.js';
 
- helper.visible=s.helper;helperLabel.hidden=!s.helper;if(s.helper){const dx=s.assistant.x-helper.position.x,dz=s.assistant.z-helper.position.z;if(Math.hypot(dx,dz)>.001)helper.rotation.y=Math.atan2(dx,dz);helper.position.set(s.assistant.x,0,s.assistant.z);helperLoad.forEach((m,i)=>m.visible=i<s.assistant.load);helperAnchor.p.set(s.assistant.x,3.2,s.assistant.z);helperLabel.innerHTML=`搬運助手 · ${s.assistant.load}/12<small>${s.assistant.phase==='return'?'回營卸貨':s.assistant.phase==='collect'?'拾取生肉':'等待收穫'}</small>`;}savings.forEach((m,i)=>m.visible=i<Math.min(90,Math.ceil(s.pendingCash/12)));extension.visible=eastWing.visible=s.expanded;oldEastFence.visible=!s.expanded;expansionLabel.hidden=!s.expanded;for(const {pad,marker,tile} of buildViews){const done=pad.id==='expand'?s.expanded:pad.id==='helper'?s.helper:s.upgrades[pad.id]>=5;marker.visible=tile.visible=!done;marker.material.color.set(s.coins>=price(s,pad.id)?'#76ba87':'#b9aaa0');}grillFlames.forEach((f,i)=>{f.scale.y=.7+Math.sin(s.time*9+i)*.3;});for(const {el,p}of labels){const v=p.clone().project(camera);el.style.left=(v.x*.5+.5)*innerWidth+'px';el.style.top=(-v.y*.5+.5)*innerHeight+'px';el.style.display=v.z>1?'none':'';}
- for(let i=transfers.length-1;i>=0;i--){const f=transfers[i];if(f.customerId!==null){const c=s.customers.people[f.customerId];f.t=1-(c.departureDelay??0)/.45;customers[f.customerId].updateWorldMatrix(true,true);customers[f.customerId].userData.meal.getWorldPosition(f.to);}else if(running&&$('shop').hidden)f.t+=dt*2.8;f.mesh.position.lerpVectors(f.from,f.to,Math.min(1,f.t));f.mesh.position.y+=Math.sin(Math.min(1,f.t)*Math.PI)*(f.customerId!==null?.12:f.resource==='arrow'?.1:1.7);if(f.resource==='arrow')f.mesh.rotation.y=Math.atan2(f.to.x-f.from.x,f.to.z-f.from.z);else if(f.customerId===null)f.mesh.rotation.y+=dt*5;if(f.t>=1){scene.remove(f.mesh);transfers.splice(i,1);}}
- for(let i=floaters.length-1;i>=0;i--){const f=floaters[i];f.life-=dt;f.p.y+=dt*1.5;const v=f.p.clone().project(camera);f.el.style.left=(v.x*.5+.5)*innerWidth+'px';f.el.style.top=(-v.y*.5+.5)*innerHeight+'px';f.el.style.opacity=Math.min(1,f.life*2);if(f.life<=0){f.el.remove();floaters.splice(i,1);}}
- if(t>toastUntil)$('toast').style.opacity=0;hudTime+=dt;if(hudTime>.15){updateHud();hudTime=0;}animateHuman(player,visualTime,dt);if(s.helper)animateHuman(helper,visualTime,dt);customers.forEach(g=>animateHuman(g,visualTime,dt));renderer.render(scene,camera);
+const $ = id => document.getElementById(id);
+let loaded; try { loaded = loadGame(localStorage); } catch { loaded = { state: fresh(), notice: '無法使用瀏覽器存檔。' }; }
+let s = loaded.state;
+let running = false, sound = true, low = false, audio, keys = {}, joy = { x: 0, z: 0 }, target = null, saveClock = 0, toastUntil = 0;
+
+// ---------- renderer, camera, light ----------
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#e4edf1'); scene.fog = new THREE.Fog('#e4edf1', 60, 120);
+let renderer;
+try { renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: true, powerPreference: 'high-performance' }); }
+catch { $('save-note').textContent = '無法啟動 WebGL，請使用支援 WebGL 2 的瀏覽器。'; $('start').disabled = true; throw Error('WebGL unavailable'); }
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08;
+const camera = new THREE.OrthographicCamera(-18, 18, 18, -18, .1, 160);
+const follow = new THREE.Vector3(s.x, 0, s.z), cameraOffset = new THREE.Vector3(26, 34, 26);
+scene.add(new THREE.HemisphereLight(0xf6fbff, 0x9fb4b9, 1.6));
+const sun = new THREE.DirectionalLight(0xfff1dc, 2); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 }); sun.shadow.normalBias = .05; sun.shadow.bias = -.0002;
+scene.add(sun, sun.target);
+
+// ---------- helpers ----------
+const box = (parent, color, x, y, z, w, h, d, shadow = true) => part(parent, color, x, y, z, w, h, d, unit, shadow);
+const rbox = (parent, color, x, y, z, w, h, d, shadow = true) => part(parent, color, x, y, z, w, h, d, rounded, shadow);
+const ball = (parent, color, x, y, z, w, h, d, shadow = false) => part(parent, color, x, y, z, w, h, d, smooth, shadow);
+const noise = n => { const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
+function flatRing(x, z, color, r, width = .08, opacity = .9) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(r - width, r, 48), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.set(x, .05, z); scene.add(m); return m;
 }
-if(loaded.notice)$('save-note').textContent=loaded.notice;
-if(s.time>0)$('start').innerHTML='繼續經營 <span>→</span>';
-renderShop();updateHud();requestAnimationFrame(draw);
+const dummy = new THREE.Object3D();
+function instanced(geometry, color, count, parent = scene) {
+  const mesh = new THREE.InstancedMesh(geometry, material(color), count);
+  mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; mesh.count = 0; parent.add(mesh); return mesh;
+}
+function place(mesh, i, x, y, z, w, h, d, ry = 0) { dummy.position.set(x, y, z); dummy.rotation.set(0, ry, 0); dummy.scale.set(w, h, d); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); }
+
+// ---------- terrain ----------
+box(scene, '#eef3f5', 0, -.5, -12, 220, 1, 220);
+const floorW = camp.maxX - camp.minX + .4, floorD = camp.maxZ - camp.minZ + .4, floorZ = (camp.minZ + camp.maxZ) / 2;
+box(scene, '#c9996a', 0, .02, floorZ, floorW, .1, floorD);
+box(scene, '#d4a878', 0, .035, floorZ, floorW - 1.2, .1, floorD - 1.2, false);
+for (let i = 0; i < 26; i++) ball(scene, i % 2 ? '#cfa072' : '#dbb286', camp.minX + 1 + noise(i) * (floorW - 2.4), .07, camp.minZ + 1 + noise(i + 40) * (floorD - 2.4), .6 + noise(i + 9) * .75, .04, .4 + noise(i + 3) * .5);
+// Snow path for the customer line.
+box(scene, '#dbe8f1', counter.x + 7.5, .015, counter.z, 19, .08, 2.8, false);
+box(scene, '#cfe0ec', counter.x + 7.5, .02, counter.z, 19, .08, .5, false);
+// Snow mounds, rocks and bare trees around the field.
+for (let i = 0; i < 70; i++) {
+  const x = -46 + noise(i * 3) * 92, z = -52 + noise(i * 3 + 1) * 66;
+  if (x > camp.minX - 3 && x < camp.maxX + 3 && z > camp.minZ - 3 && z < camp.maxZ + 3) continue;
+  if (z > counter.z - 2.5 && z < counter.z + 2.5 && x > counter.x - 1 && x < counter.x + 18) continue;
+  const herdZone = Math.hypot(x / 1.5, z + 17) < 12;
+  const kind = noise(i * 3 + 2);
+  if (kind < .4) ball(scene, '#f8fbfc', x, .12, z, 1 + noise(i) * 1.3, .3 + noise(i + 1) * .25, .8 + noise(i + 2) * 1, true);
+  else if (kind < .72) ball(scene, '#b9c3c9', x, .15, z, .25 + noise(i) * .45, .2 + noise(i + 1) * .25, .25 + noise(i + 2) * .4, true);
+  else if (!herdZone) { const t = createTree(.8 + noise(i) * .7); t.position.set(x, 0, z); t.rotation.y = noise(i + 5) * 6; scene.add(t); }
+}
+
+// ---------- fence with gate panels ----------
+const postGeo = new THREE.BoxGeometry(.18, 1.15, .18), railGeo = new THREE.BoxGeometry(1, .1, .08);
+const posts = [], rails = [];
+const opening = x => x > 1.3 && x < 5.9;
+function fenceRun(x0, z0, x1, z1, skip) {
+  const len = Math.hypot(x1 - x0, z1 - z0), n = Math.round(len / .7), dx = (x1 - x0) / n, dz = (z1 - z0) / n, ry = Math.atan2(dx, dz) + Math.PI / 2;
+  for (let i = 0; i <= n; i++) { const x = x0 + dx * i, z = z0 + dz * i; if (skip && skip(x, z)) continue; posts.push({ x, z, ry }); if (i < n && !(skip && skip(x + dx, z + dz))) rails.push({ x: x + dx / 2, z: z + dz / 2, ry, len: Math.hypot(dx, dz) }); }
+}
+const fx0 = camp.minX - .2, fx1 = camp.maxX + .2, fz0 = camp.minZ - .2, fz1 = camp.maxZ + .2;
+fenceRun(fx0, fz0, fx1, fz0, x => opening(x)); fenceRun(fx0, fz1, fx1, fz1); fenceRun(fx0, fz0, fx0, fz1); fenceRun(fx1, fz0, fx1, fz1);
+const postMesh = instanced(postGeo, '#a97d53', posts.length), railMesh = instanced(railGeo, '#c4986a', rails.length * 2);
+posts.forEach((p, i) => place(postMesh, i, p.x, .58, p.z, 1, 1, 1, p.ry)); postMesh.count = posts.length;
+rails.forEach((r, i) => { place(railMesh, i * 2, r.x, .5, r.z, r.len, 1, 1, r.ry); place(railMesh, i * 2 + 1, r.x, .88, r.z, r.len, 1, 1, r.ry); }); railMesh.count = rails.length * 2;
+const capMesh = instanced(new THREE.ConeGeometry(.14, .26, 5), '#d9d2c4', posts.length); posts.forEach((p, i) => place(capMesh, i, p.x, 1.27, p.z, 1, 1, 1)); capMesh.count = posts.length;
+function gatePanel(x, z, ry) {
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g);
+  for (const side of [-1, 1]) box(g, '#c43f2d', side * 1.05, .95, 0, .16, 1.9, .16);
+  box(g, '#c43f2d', 0, 1.85, 0, 2.3, .16, .16); box(g, '#c43f2d', 0, .1, 0, 2.3, .14, .16);
+  for (const d of [-1, 1]) { const bar = box(g, '#d8553f', 0, .97, 0, .12, 2.6, .1); bar.rotation.z = d * .88; }
+  box(g, '#a93523', 0, .97, -.05, 1.9, 1.5, .04, false);
+  return g;
+}
+gatePanel(.2, fz0, 0); gatePanel(7, fz0, 0); gatePanel(fx0, 3.5, Math.PI / 2);
+
+// ---------- table, cash pile, pads, sign ----------
+const tableGroup = new THREE.Group(); tableGroup.position.set(table.x + .8, 0, table.z); scene.add(tableGroup);
+for (const x of [-.55, .55]) for (const z of [-1.4, 1.4]) box(tableGroup, '#6d4f36', x, .5, z, .18, 1, .18);
+box(tableGroup, '#b8895b', 0, 1.02, 0, 1.7, .16, 3.5); box(tableGroup, '#8f6744', 0, .92, 0, 1.75, .06, 3.55, false);
+const tableMeat = instanced(rounded, '#e0737e', config.stockLimit, tableGroup);
+flatRing(table.x, table.z, '#ffffff', tableRange, .1, .55);
+box(scene, '#4d9ad6', table.x - .4, 1.4, table.z - 2.6, 1.3, .9, .12); box(scene, '#f4f8fa', table.x - .4, 1.4, table.z - 2.55, 1, .6, .05, false); box(scene, '#6e5033', table.x - .4, .5, table.z - 2.6, .12, 1, .12);
+const cashGroup = new THREE.Group(); cashGroup.position.set(cashPoint.x, 0, cashPoint.z); scene.add(cashGroup);
+box(cashGroup, '#a9865c', 0, .08, 0, 1.9, .16, 1.5); const cashPile = instanced(unit, '#5fd45a', 180, cashGroup);
+flatRing(cashPoint.x, cashPoint.z, '#9ff39a', cashRange, .09, .7);
+const padViews = pads.map(p => {
+  const tile = rbox(scene, '#efe5d0', p.x, .04, p.z, 2.4, .08, 2.4, false); const inner = rbox(scene, '#f9f3e6', p.x, .06, p.z, 1.5, .08, 1.5, false);
+  const ring = flatRing(p.x, p.z, '#ffffff', padRadius, .07, .8); const glow = flatRing(p.x, p.z, '#5fd45a', padRadius - .25, .22, 0);
+  return { pad: p, tile, inner, ring, glow };
+});
+
+// ---------- labels (DOM, projected) ----------
+const labels = [];
+function label(className, x, y, z) { const el = document.createElement('div'); el.className = 'label ' + className; $('labels').append(el); const item = { el, p: new THREE.Vector3(x, y, z) }; labels.push(item); return item; }
+const padLabels = padViews.map(({ pad: p }) => { const l = label('pad-label', p.x, 1.1, p.z); l.el.style.pointerEvents = 'auto'; l.el.onclick = () => { if (running) target = { x: p.x, z: p.z }; }; return l; });
+const tableLabel = label('table-label', table.x + .8, 1.5, table.z - 2.2); const cashLabel = label('cash-label', cashPoint.x, 1.2, cashPoint.z + .6);
+const bubble = label('bubble', counter.x, 2.9, counter.z);
+
+// ---------- characters ----------
+const player = createHuman('#3f8ed0', '#f6f2e8'); scene.add(player);
+const weaponPivot = new THREE.Group(); weaponPivot.position.set(0, 1.15, 0); player.add(weaponPivot);
+const sword = new THREE.Group(); sword.position.set(.62, 0, .2); weaponPivot.add(sword);
+const blade = box(sword, '#dfe8ec', 0, .05, .85, .1, .05, 1.5); box(sword, '#f6fafc', .0, .08, .85, .05, .02, 1.45, false); box(sword, '#6b4b32', 0, 0, -.1, .09, .09, .4); box(sword, '#c9a052', 0, 0, .12, .4, .1, .08);
+const packMeat = instanced(rounded, '#e0737e', 420, player); const packCash = instanced(unit, '#5fd45a', 64, player);
+const hpBar = new THREE.Group(); hpBar.position.y = 2.75; player.add(hpBar);
+const hpBack = box(hpBar, '#2a2a2a', 0, 0, 0, 1.2, .1, .1, false); const hpFill = box(hpBar, '#5fe05a', 0, .01, .02, 1.2, .12, .1, false);
+let attackVisual = 0, attackAim = 0, visualTime = 0;
+const slashGroup = new THREE.Group(); scene.add(slashGroup);
+const slashMat = new THREE.MeshBasicMaterial({ color: '#ff4fd0', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+const slashCore = new THREE.MeshBasicMaterial({ color: '#ffd0f4', transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false });
+let slashMesh = null, slashInner = null, slashKey = '';
+function buildSlash(range, angle) {
+  const key = range + '/' + angle; if (key === slashKey) return; slashKey = key;
+  for (const m of [slashMesh, slashInner]) if (m) { slashGroup.remove(m); m.geometry.dispose(); }
+  slashMesh = new THREE.Mesh(new THREE.RingGeometry(.5, range, 28, 1, -angle / 2, angle), slashMat); slashMesh.rotation.x = -Math.PI / 2; slashMesh.position.y = .9;
+  slashInner = new THREE.Mesh(new THREE.RingGeometry(range * .55, range * .8, 28, 1, -angle / 2.6, angle / 1.3), slashCore); slashInner.rotation.x = -Math.PI / 2; slashInner.position.y = .95;
+  slashGroup.add(slashMesh, slashInner);
+}
+const bearViews = s.bears.map(() => { const g = createBear(); scene.add(g); g.userData.hp = config.bearHp; return g; });
+const customers = Array.from({ length: customerCount }, (_, i) => { const g = createHuman(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'); g.scale.setScalar(.92); g.userData.meat = rbox(g, '#e0737e', 0, 1.05, .55, .6, .25, .5); g.userData.meat.visible = false; scene.add(g); return g; });
+const helper = createHuman('#5f8a6e', '#efe6d6'); scene.add(helper); helper.visible = s.helper;
+const helperLoad = Array.from({ length: assistantCapacity }, (_, i) => rbox(helper, '#e0737e', i % 2 ? -.2 : .2, 1.05 + Math.floor(i / 2) * .19, -.62, .42, .17, .5));
+const helperLabel = label('', -6, 2.9, 7); helperLabel.el.innerHTML = '搬肉助手';
+
+// ---------- loot, transfers, effects, snow ----------
+const dropMesh = instanced(rounded, '#e0737e', config.dropLimit + 80);
+const boneMesh = instanced(smooth, '#fff0f2', config.dropLimit + 80); boneMesh.castShadow = false;
+const transfers = [];
+function transfer(kind, from, to, speed = 2.6) {
+  if (transfers.length >= 80) return;
+  const mesh = kind === 'bill' ? box(scene, '#5fd45a', from.x, 1.4, from.z, .5, .08, .3) : rbox(scene, '#e0737e', from.x, 1.4, from.z, .55, .24, .48);
+  transfers.push({ mesh, from: new THREE.Vector3(from.x, 1.3, from.z), to: new THREE.Vector3(to.x, 1.3, to.z), t: 0, speed });
+}
+const effects = [];
+function spark(x, z, color, size, life, rise = 2) { if (effects.length > 70) return; const m = ball(scene, color, x, 1.3, z, size, size, size); m.material = new THREE.MeshBasicMaterial({ color, transparent: true }); m.userData = { life, max: life, rise, grow: 2.5 }; effects.push(m); }
+function droplets(x, z) { for (let i = 0; i < 4; i++) { if (effects.length > 70) return; const m = box(scene, '#d9344a', x, 1.2, z, .14, .1, .14, false); m.material = new THREE.MeshBasicMaterial({ color: '#d9344a' }); m.userData = { life: .55, max: .55, vx: (noise(i + x) - .5) * 7, vz: (noise(i + z) - .5) * 7, vy: 3 + noise(i) * 3 }; effects.push(m); } }
+function burst(x, z, color = '#9ff39a') { const r = flatRing(x, z, color, 1.2, .25, .9); r.userData = { life: .5, max: .5, ring: true }; effects.push(r); }
+const snowCount = 160, snowGeo = new THREE.BufferGeometry(), snowPos = new Float32Array(snowCount * 3);
+for (let i = 0; i < snowCount; i++) { snowPos[i * 3] = (noise(i) - .5) * 60; snowPos[i * 3 + 1] = noise(i + 1) * 24; snowPos[i * 3 + 2] = (noise(i + 2) - .5) * 60; }
+snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: '#ffffff', size: .22, transparent: true, opacity: .75, depthWrite: false })); scene.add(snow);
+
+// ---------- audio & UI helpers ----------
+function beep(f = 500, len = .1, type = 'sine', gain = .04) { if (!sound || !audio) return; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, audio.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(40, f * .6), audio.currentTime + len); g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + len + .02); }
+function toast(t) { $('toast').textContent = t; $('toast').style.opacity = 1; toastUntil = performance.now() + 2400; }
+function save() { try { saveGame(localStorage, s); } catch { $('save-note').textContent = '瀏覽器不允許儲存，進度只保留於本次遊玩。'; } }
+function stop() { running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = '繼續經營 <span>→</span>'; save(); }
+$('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { } running = true; $('menu').hidden = true; };
+$('pause').onclick = stop;
+$('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; };
+$('quality').onclick = () => { low = !low; renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.8)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; };
+function restart() {
+  if (!confirm('確定清除目前的營地進度，重新開始？')) return;
+  s = fresh(); target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
+  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
+  try { resetGame(localStorage, s); } catch { }
+  follow.set(s.x, 0, s.z); running = true; $('menu').hidden = true; updateHud(); toast('新營地開張！去雪原獵第一隻熊');
+}
+$('reset').onclick = restart; $('restart').onclick = restart;
+$('objective').onclick = () => { if (!running) return; const a = nextAction(s); target = { x: a.x, z: a.z }; };
+
+// ---------- input ----------
+const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), point = new THREE.Vector3();
+$('game').onpointerdown = e => { if (!running) return; ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), camera); if (ray.ray.intersectPlane(plane, point)) { const b = worldBounds(s); target = { x: Math.max(b.minX, Math.min(b.maxX, point.x)), z: Math.max(b.minZ, Math.min(b.maxZ, point.z)) }; } };
+let joyId = null;
+function moveJoy(e) { const r = $('joystick').getBoundingClientRect(), x = e.clientX - r.left - r.width / 2, z = e.clientY - r.top - r.height / 2, d = Math.max(40, Math.hypot(x, z)); joy = { x: x / d, z: z / d }; $('stick').style.transform = `translate(${joy.x * 32}px,${joy.z * 32}px)`; target = null; }
+$('joystick').onpointerdown = e => { if (!running) return; joyId = e.pointerId; $('joystick').setPointerCapture(e.pointerId); moveJoy(e); };
+$('joystick').onpointermove = e => { if (e.pointerId === joyId) moveJoy(e); };
+function clearJoy() { joyId = null; joy = { x: 0, z: 0 }; $('stick').style.transform = ''; }
+$('joystick').onpointerup = clearJoy; $('joystick').onpointercancel = clearJoy; $('joystick').onlostpointercapture = clearJoy;
+addEventListener('keydown', e => { if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault(); keys[e.key.toLowerCase()] = true; target = null; if (e.key === 'Escape') stop(); });
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+addEventListener('blur', () => { if (running) stop(); }); document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); }); addEventListener('pagehide', save);
+$('game').addEventListener('webglcontextlost', e => { e.preventDefault(); stop(); toast('畫面暫時中斷，進度已儲存。請重新整理。'); });
+function resize() { renderer.setSize(innerWidth, innerHeight, false); const a = innerWidth / innerHeight, h = a < .8 ? 14.5 : a < 1.35 ? 12.5 : 11; camera.left = -h * a; camera.right = h * a; camera.top = h; camera.bottom = -h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+// ---------- HUD ----------
+let lastCoins = s.coins;
+function updateHud() {
+  $('coins').textContent = s.coins;
+  const action = nextAction(s); $('objective').textContent = action.text;
+  $('bag').querySelector('b').textContent = `${s.meat} / ${capacity(s)}`; $('bag').classList.toggle('full', s.meat >= capacity(s));
+  $('stats').textContent = `擊倒 ${s.kills} · 售出 ${s.sold} · ${weaponStats(s.upgrades.weapon).name}`;
+  padViews.forEach(({ pad: p }, i) => {
+    const info = padLabel(s, p), el = padLabels[i].el;
+    const near = distance(s, p) < 3.4;
+    el.className = 'label pad-label' + (info.done ? ' done' : info.locked ? ' locked' : s.coins >= info.remaining ? ' affordable' : '') + (near ? ' near' : '');
+    el.innerHTML = `<span class="icon">${p.icon}</span>${info.done ? p.name + ' MAX' : `<b>${info.remaining}</b>`}<small>${info.done ? '已升到最高' : info.locked ? p.name + '・需先' + p.requires : near ? `${p.name} Lv.${level(s, p.id) + 1}・${p.detail}` : p.name}</small>`;
+  });
+  tableLabel.el.innerHTML = `販售桌 · ${s.stock} 份<small>${s.stock ? '客人排隊購買中' : '把背上的肉堆到這裡'}</small>`;
+  cashLabel.el.innerHTML = s.cash ? `$ ${s.cash}<small>走過來收錢</small>` : `收款處<small>客人付的錢會放在這</small>`; cashLabel.el.hidden = s.cash === 0 && s.sold > 0;
+  bubble.el.className = 'label bubble' + (s.stock ? '' : ' wait'); bubble.el.textContent = s.stock ? '🥩' : '等肉…';
+}
+
+// ---------- main loop ----------
+let prev = performance.now(), acc = 0, hudTime = 0, lastFrame = 0;
+function draw(t) {
+  requestAnimationFrame(draw);
+  let dt = Math.min((t - prev) / 1000, .1); lastFrame = (t - prev) / 1000; prev = t;
+  if (running) {
+    acc += dt;
+    while (acc >= 1 / 30) {
+      let x = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0) + joy.x, z = (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0) + joy.z;
+      if (target && Math.hypot(x, z) < .1) { const d = Math.hypot(target.x - s.x, target.z - s.z); if (d > .3) { x = (target.x - s.x) / d; z = (target.z - s.z) / d; } else target = null; }
+      const events = step(s, 1 / 30, { x, z });
+      for (const e of events) {
+        if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; beep(220, .12, 'sawtooth', .025); }
+        else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); }
+        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); beep(160, .15, 'square', .03); }
+        else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); beep(700 + Math.min(40, s.meat) * 12, .05); } }
+        else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) beep(520, .05); }
+        else if (e.type === 'collect') { transfer('bill', e.from, e.to, 3.2); beep(980, .06); }
+        else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); beep(1200, .04, 'triangle', .02); }
+        else if (e.type === 'sale') { transfer('meat', { x: table.x + .8, z: table.z }, e.customer, 3); transfer('bill', e.customer, cashPoint, 2.4); }
+        else if (e.type === 'built') { burst(e.x, e.z); toast(`${e.name} 升級完成！`); beep(880, .3); beep(1320, .4); save(); }
+        else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); }
+        else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
+      }
+      acc -= 1 / 30;
+    }
+    saveClock += dt; if (saveClock > 8) { save(); saveClock = 0; }
+    visualTime += dt; if (!window.__polar?.freeze) attackVisual = Math.max(0, attackVisual - dt);
+  } else acc = 0;
+
+  // player
+  const playerTarget = new THREE.Vector3(s.x, 0, s.z);
+  if (player.position.distanceTo(playerTarget) > 6) player.position.copy(playerTarget); else player.position.lerp(playerTarget, 1 - Math.exp(-dt * 24));
+  player.rotation.y += Math.atan2(Math.sin(s.face - player.rotation.y), Math.cos(s.face - player.rotation.y)) * (1 - Math.exp(-dt * 16));
+  const swing = attackVisual > 0 ? 1 - attackVisual / .2 : 0;
+  weaponPivot.rotation.y = attackVisual > 0 ? 1.3 - swing * 2.8 : .3; weaponPivot.rotation.x = attackVisual > 0 ? -.2 : .35; sword.rotation.x = attackVisual > 0 ? -.3 : -1.1;
+  const wep = weaponStats(s.upgrades.weapon); blade.scale.z = 1.2 + s.upgrades.weapon * .18; blade.position.z = .7 + s.upgrades.weapon * .09;
+  player.userData.limbs.arms[1].userData.locked = true; player.userData.limbs.arms[1].rotation.x = attackVisual > 0 ? -1.5 + swing * .6 : -.4;
+  slashMat.opacity = attackVisual > 0 ? .55 * Math.min(1, attackVisual / .12) : 0; slashCore.opacity = attackVisual > 0 ? .95 * Math.min(1, attackVisual / .12) : 0;
+  slashGroup.scale.setScalar(attackVisual > 0 ? .7 + swing * .4 : 1); slashGroup.visible = attackVisual > 0;
+  hpBar.visible = s.hp < 100; hpFill.scale.x = 1.2 * Math.max(0, s.hp) / 100; hpFill.position.x = -(1.2 - hpFill.scale.x) / 2; hpBar.rotation.y = -player.rotation.y + Math.PI / 4;
+  // back stacks: meat column and carried cash
+  for (let i = 0; i < s.meat && i < 420; i++) place(packMeat, i, i % 2 ? -.23 : .23, 1.02 + Math.floor(i / 2) * .17, -.62, .44, .16, .5, Math.sin(i * .7) * .08);
+  packMeat.count = Math.min(420, s.meat); packMeat.instanceMatrix.needsUpdate = true;
+  const bills = Math.min(64, Math.ceil(s.coins / 20));
+  for (let i = 0; i < bills; i++) place(packCash, i, i % 2 ? -.2 : .2, 1.02 + Math.floor(i / 2) * .075, -1.05, .42, .07, .3, Math.sin(i * 1.3) * .1);
+  packCash.count = bills; packCash.instanceMatrix.needsUpdate = true;
+  packMeat.rotation.z = packCash.rotation.z = Math.sin(visualTime * 7) * .02;
+
+  // camera and sun follow the player
+  follow.lerp(new THREE.Vector3(s.x, 0, s.z), 1 - Math.exp(-dt * 4.5));
+  camera.position.copy(follow).add(cameraOffset); camera.lookAt(follow);
+  sun.position.set(follow.x - 18, 32, follow.z + 14); sun.target.position.copy(follow);
+  snow.position.set(follow.x, 0, follow.z); const sp = snowGeo.attributes.position; for (let i = 0; i < snowCount; i++) { let y = sp.array[i * 3 + 1] - dt * 2.2; if (y < 0) y += 24; sp.array[i * 3 + 1] = y; sp.array[i * 3] += Math.sin(visualTime + i) * dt * .3; } sp.needsUpdate = true;
+
+  // bears
+  const herd = herdSize(s);
+  bearViews.forEach((g, i) => {
+    const b = s.bears[i]; g.visible = b.hp > 0 && i < herd; if (!g.visible) return;
+    const to = new THREE.Vector3(b.x, 0, b.z); if (g.position.distanceTo(to) > 5) g.position.copy(to); else g.position.lerp(to, 1 - Math.exp(-dt * 18));
+    const dx = b.x - g.position.x, dz = b.z - g.position.z; if (Math.hypot(dx, dz) > .01) { const a = Math.atan2(dx, dz); g.rotation.y += Math.atan2(Math.sin(a - g.rotation.y), Math.cos(a - g.rotation.y)) * (1 - Math.exp(-dt * 8)); }
+    g.position.y = Math.abs(Math.sin(visualTime * 6 + i)) * .04;
+    const bar = g.userData.bar; bar.group.visible = b.hp < config.bearHp; bar.fill.scale.x = 1.4 * Math.max(0, b.hp) / config.bearHp; bar.fill.position.x = -(1.4 - bar.fill.scale.x) / 2; bar.group.rotation.y = -g.rotation.y + Math.PI / 4;
+    if (b.hp < g.userData.hp) g.userData.flash = .12; g.userData.hp = b.hp; g.userData.flash = Math.max(0, (g.userData.flash || 0) - dt);
+    const sc = g.userData.flash > 0 ? 1.08 : 1; g.scale.set(sc, 2 - sc, sc);
+  });
+
+  // loot on the ground
+  const shown = Math.min(s.drops.length, config.dropLimit + 80);
+  for (let i = 0; i < shown; i++) { const d = s.drops[i]; place(dropMesh, i, d.x, .2, d.z, .62, .26, .5, i * 1.3); place(boneMesh, i, d.x + Math.cos(i * 1.3) * .12, .36, d.z - Math.sin(i * 1.3) * .12, .13, .07, .1); }
+  dropMesh.count = boneMesh.count = shown; dropMesh.instanceMatrix.needsUpdate = boneMesh.instanceMatrix.needsUpdate = true;
+
+  // table stock and cash pile
+  for (let i = 0; i < s.stock; i++) place(tableMeat, i, (i % 2 ? -.38 : .38), 1.2 + Math.floor(i / 10) * .22, -1.3 + Math.floor((i % 10) / 2) * .65, .68, .2, .55, (i % 3) * .06);
+  tableMeat.count = Math.min(config.stockLimit, s.stock); tableMeat.instanceMatrix.needsUpdate = true;
+  const billCount = Math.min(180, Math.ceil(s.cash / 5));
+  for (let i = 0; i < billCount; i++) place(cashPile, i, -.55 + (i % 3) * .55, .22 + Math.floor(i / 6) * .075, (Math.floor(i / 3) % 2 ? .32 : -.32), .5, .07, .32, Math.sin(i * 2.1) * .12);
+  cashPile.count = billCount; cashPile.instanceMatrix.needsUpdate = true;
+  cashLabel.p.set(cashPoint.x, .6 + billCount / 6 * .075 + .4, cashPoint.z + .6); tableLabel.p.set(table.x + .8, 1.5 + Math.ceil(s.stock / 10) * .22, table.z - 2.2);
+
+  // pads
+  padViews.forEach(({ pad: p, ring, glow, inner }) => {
+    const cost = price(s, p.id); const active = s.padLatch !== p.id && cost !== null && distance(s, p) < padRadius;
+    const paid = cost ? s.paid[p.id] / cost : 0;
+    glow.material.opacity = active ? .5 + Math.sin(visualTime * 8) * .2 : paid > 0 ? .35 : 0; glow.scale.setScalar(.4 + paid * .6 + (active ? .05 : 0));
+    ring.material.color.set(cost === null ? '#9fc4d0' : s.coins >= cost - s.paid[p.id] ? '#9ff39a' : '#ffffff'); inner.material = material(cost === null ? '#d8e6ea' : '#f9f3e6');
+  });
+
+  // customers & helper
+  customers.forEach((g, i) => {
+    const c = s.customers.people[i]; const dx = c.x - g.position.x, dz = c.z - g.position.z;
+    if (Math.hypot(dx, dz) > .001) g.rotation.y = Math.atan2(dx, dz); g.position.set(c.x, 0, c.z);
+    if (c.phase === 'queue' || c.hold > 0) g.rotation.y = -Math.PI / 2; g.userData.meat.visible = c.carrying && c.hold < .1;
+  });
+  const front = s.customers.people[s.customers.queue[0]]; if (front) bubble.p.set(front.x, 2.9, front.z); bubble.el.hidden = !front || Math.hypot(front.x - counter.x, front.z - counter.z) > .3;
+  helper.visible = s.helper; helperLabel.el.hidden = !s.helper;
+  if (s.helper) { const dx = s.assistant.x - helper.position.x, dz = s.assistant.z - helper.position.z; if (Math.hypot(dx, dz) > .001) helper.rotation.y = Math.atan2(dx, dz); helper.position.set(s.assistant.x, 0, s.assistant.z); helperLoad.forEach((m, i) => m.visible = i < s.assistant.load); helperLabel.p.set(s.assistant.x, 3, s.assistant.z); helperLabel.el.innerHTML = `搬肉助手 · ${s.assistant.load}/${assistantCapacity}`; }
+
+  // transfers and effects
+  for (let i = transfers.length - 1; i >= 0; i--) { const f = transfers[i]; if (running) f.t += dt * f.speed; const k = Math.min(1, f.t); f.mesh.position.lerpVectors(f.from, f.to, k); f.mesh.position.y += Math.sin(k * Math.PI) * 1.8; f.mesh.rotation.y += dt * 6; if (f.t >= 1) { scene.remove(f.mesh); transfers.splice(i, 1); } }
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const e = effects[i], u = e.userData; u.life -= dt;
+    if (u.ring) { e.scale.setScalar(1 + (1 - u.life / u.max) * 2.2); e.material.opacity = Math.max(0, u.life / u.max); }
+    else if (u.vy !== undefined) { u.vy -= dt * 14; e.position.x += u.vx * dt; e.position.z += u.vz * dt; e.position.y = Math.max(.08, e.position.y + u.vy * dt); e.scale.setScalar(.14 * Math.max(.2, u.life / u.max)); }
+    else { e.position.y += dt * u.rise; e.scale.multiplyScalar(1 + dt * u.grow); e.material.opacity = Math.max(0, u.life / u.max); }
+    if (u.life <= 0) { scene.remove(e); effects.splice(i, 1); }
+  }
+  for (const { el, p } of labels) { const v = p.clone().project(camera); el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; el.style.display = v.z > 1 ? 'none' : ''; }
+  if (t > toastUntil) $('toast').style.opacity = 0;
+  hudTime += dt; if (hudTime > .12 || s.coins !== lastCoins) { updateHud(); hudTime = 0; lastCoins = s.coins; }
+  animateHuman(player, visualTime, dt); if (s.helper) animateHuman(helper, visualTime, dt); customers.forEach(g => animateHuman(g, visualTime, dt));
+  renderer.render(scene, camera);
+}
+if (loaded.notice) $('save-note').textContent = loaded.notice;
+if (s.time > 0) $('start').innerHTML = '繼續經營 <span>→</span>';
+buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle);
+if (location.search.includes('debug')) window.__polar = { state: () => s, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
+updateHud(); requestAnimationFrame(draw);

@@ -1,66 +1,211 @@
-import {newCustomers,moveCustomers,readyCustomer,takeMeal,validCustomers} from './customers.js';
-import {buildPads,buildDuration,weaponStats,newAssistant,newBuildHold,updateAssistant} from './progression.js';
-export const cashPoint = {x:9.5,z:6.8};
-export const stations = [
-  { id: 'cut', name: '切肉台', x: -6, z: 3, input: 'raw', output: 'cut', seconds: .65 },
-  { id: 'grill', name: '烤爐', x: 0, z: 3, input: 'cut', output: 'meal', seconds: .9 },
-  { id: 'sell', name: '販售櫃台', x: 6, z: 3, input: 'meal', seconds: .65 },
-];
-export const config = { speed: 6, capacity: 48, sale: 12, attackRange: 3, attackInterval: .45, damage: 14, pickup: 1.6, stationRange: 1.7, bearHp: 70, lootPerBear: 6, stockLimit: 30, queueLimit: 180, respawnLootLimit: 128 };
-export const distance = (a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
-export const worldBounds=s=>({minX:-14,maxX:s.expanded?22:14,minZ:s.expanded?-27:-17,maxZ:12});
-export const canHire=s=>s.expanded&&s.sold>=20;
-export const capacity = s=>config.capacity+s.upgrades.bag*24;
-export function fresh(){return {version:5,pendingCash:0,customers:newCustomers(),x:0,z:7,hp:100,coins:0,earned:0,kills:0,sold:0,bag:[],upgrades:{weapon:0,bag:0,speed:0},expanded:false,helper:false,queues:{cut:[],grill:[],sell:[]},timers:{cut:0,grill:0,sell:0},outputs:{cut:0,grill:0},attack:0,transfer:0,helperTimer:0,time:0,assistant:newAssistant(),buildHold:newBuildHold(),bears:Array.from({length:9},(_,i)=>bear(i)),drops:[]};}
-function bear(i){return {id:i,x:(i%3-1)*7,z:-6-Math.floor(i/3)*8,hx:(i%3-1)*7,hz:-6-Math.floor(i/3)*8,hp:config.bearHp,cool:1,respawn:0};}
-export function price(s,key){return key==='expand'?720:key==='helper'?960:({weapon:90,bag:96,speed:150}[key]||0)*2**s.upgrades[key];}
-export function buy(s,key){if(!['weapon','bag','speed','expand','helper'].includes(key))return false;if(key==='helper'&&!canHire(s))return false;if(key==='expand'&&s.expanded||key==='helper'&&s.helper||s.upgrades[key]>=5)return false;const cost=price(s,key);if(s.coins<cost)return false;s.coins-=cost;if(key==='expand')s.expanded=true;else if(key==='helper')s.helper=true;else s.upgrades[key]++;return true;}
-export function step(s,dt,input={x:0,z:0}){
- const events=[];const bounds=worldBounds(s);s.time+=dt;const len=Math.max(1,Math.hypot(input.x,input.z));s.x=Math.max(-14,Math.min(bounds.maxX,s.x+input.x/len*config.speed*dt));s.z=Math.max(s.expanded?-27:-17,Math.min(12,s.z+input.z/len*config.speed*dt));s.attack-=dt;s.transfer-=dt;
- const weapon=weaponStats(s.upgrades.weapon);
- const attackTarget=s.bears.filter(b=>b.hp>0&&(b.id<6||s.expanded)&&distance(s,b)<weapon.range).sort((a,b)=>distance(s,a)-distance(s,b))[0];
- if(s.z>0)s.hp=Math.min(100,s.hp+12*dt);
- for(const b of s.bears){if(b.id>=6&&!s.expanded)continue;if(b.hp<=0){b.respawn-=dt;if(b.respawn<=0&&s.drops.length<config.respawnLootLimit){Object.assign(b,bear(b.id));}continue;}const d=distance(s,b);b.cool-=dt;
- if(b===attackTarget&&s.attack<=0){b.hp-=weapon.damage;s.attack=weapon.interval;events.push({type:'hit',x:b.x,z:b.z,damage:weapon.damage,weapon:weapon.tier,from:{x:s.x,z:s.z}});if(b.hp<=0){s.kills++;b.respawn=18;for(let j=0;j<config.lootPerBear;j++)s.drops.push({x:b.x+Math.cos(j)*.65,z:b.z+Math.sin(j)*.65,type:'raw'});events.push({type:'kill',x:b.x,z:b.z});continue;}}
- if(d<5&&s.z<-.5){if(d>1.5){b.x+=(s.x-b.x)/d*1.7*dt;b.z+=(s.z-b.z)/d*1.7*dt;}else if(b.cool<=0){s.hp-=9;b.cool=1.4;events.push({type:'hurt'});}}else{const roaming={x:b.hx+Math.sin(s.time*.23+b.id*2.1)*1.8,z:b.hz+Math.cos(s.time*.19+b.id*1.7)*1.3};const home=distance(roaming,b);if(home>.08){const stride=Math.min(home,dt*.85);b.x+=(roaming.x-b.x)/home*stride;b.z+=(roaming.z-b.z)/home*stride;}}
- }
- if(s.hp<=0){s.x=0;s.z=7;s.hp=100;events.push({type:'rescue'});}
- s.drops=s.drops.filter(d=>{if(distance(s,d)<config.pickup&&s.bag.length<capacity(s)){s.bag.push(d.type);events.push({type:'pickup',resource:d.type,from:{x:d.x,z:d.z},to:{x:s.x,z:s.z}});return false;}return true;});
- moveCustomers(s.customers,dt);
- for(const c of s.customers.people){if(c.paymentDue>0&&(c.departureDelay??0)===0){const value=c.paymentDue;c.paymentDue=0;s.pendingCash+=value;s.earned+=value;s.sold++;events.push({type:'sale',value,customerId:c.id,customer:{x:c.x,z:c.z},x:6,z:3});}}
- const speed=(1+s.upgrades.speed*.3)*(s.helper?1.5:1);
- for(const st of stations){const q=s.queues[st.id];const nearby=distance(s,{x:st.x,z:st.z+1.7})<config.stationRange;
- if(nearby&&s.transfer<=0){const idx=s.bag.indexOf(st.input);if(idx>=0&&q.length<config.queueLimit){q.push(s.bag.splice(idx,1)[0]);s.transfer=.06;events.push({type:'deposit',resource:st.input,from:{x:s.x,z:s.z},to:{x:st.x,z:st.z}});}}
- if(st.id==='grill'&&nearby&&s.transfer<=0&&s.outputs.grill>0&&s.bag.length<capacity(s)){s.outputs.grill--;s.bag.push('meal');s.transfer=.06;events.push({type:'pickup',resource:'meal',from:{x:st.x,z:st.z},to:{x:s.x,z:s.z}});}
- if(q.length&&(st.id!=='sell'||readyCustomer(s.customers))&&(!st.output||s.outputs[st.id]<config.stockLimit)){s.timers[st.id]+=dt*(st.id==='sell'?1:speed)*(st.id==='grill'&&s.expanded?2:1);if(s.timers[st.id]>=st.seconds){s.timers[st.id]-=st.seconds;q.shift();if(st.id==='sell'){const value=config.sale+(s.expanded?4:0);const customer=takeMeal(s.customers,value);events.push({type:'handoff',value,customerId:customer.id,customer:{x:customer.x,z:customer.z},x:st.x,z:st.z});}else s.outputs[st.id]++;}}else s.timers[st.id]=0;
- }
- // Only cut meat moves automatically; cooked meals must be carried by the player.
- s.helperTimer+=dt;
- if(s.helperTimer>=(s.helper?.18:.5)){
-  s.helperTimer=0;
-  for(const [source,destination] of [[stations[0],stations[1]]]){
-   if(s.outputs[source.id]>0&&s.queues[destination.id].length<config.queueLimit){
-    s.outputs[source.id]--;s.queues[destination.id].push(source.output);
-    events.push({type:'deposit',resource:source.output,from:{x:source.x,z:source.z},to:{x:destination.x,z:destination.z}});
-   }
-  }
- }
+// Pure simulation: no Three.js, no DOM. Mirrors the reference playable:
+// hunt a herd of polar bears with wide sword swings → carry a tall stack of
+// meat → drop it on the sales table → customers pay cash at the table →
+// collect the cash → stand on ground pads to buy upgrades and expand.
+import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
+import { pads, padRadius, price, level, maxLevel, canHire, apply, weaponStats, newAssistant, assistantCapacity, updateAssistant } from './progression.js';
+export { price, level, canHire, pads, weaponStats };
 
- if(s.pendingCash>0&&distance(s,cashPoint)<1.5){const value=s.pendingCash;s.pendingCash=0;s.coins+=value;events.push({type:'collectCash',value,from:{...cashPoint},to:{x:s.x,z:s.z}});}
- updateAssistant(s,dt,config.queueLimit,events);
- const pad=buildPads.find(p=>distance(s,p)<1.15);
- if(!pad)s.buildHold=newBuildHold();
- else {
-  const hold=s.buildHold;
-  if(hold.id!==pad.id)Object.assign(hold,{id:pad.id,t:0,latched:false});
-  const done=pad.id==='expand'?s.expanded:pad.id==='helper'?s.helper:s.upgrades[pad.id]>=5;
-  if(!hold.latched&&!done&&(pad.id!=='helper'||canHire(s))&&s.coins>=price(s,pad.id)) {
-   hold.t+=dt;
-   if(hold.t>=buildDuration){hold.latched=true;if(buy(s,pad.id))events.push({type:'built',id:pad.id,name:pad.name,x:pad.x,z:pad.z});}
-  } else if(!hold.latched)hold.t=0;
- }
- return events;
+export const config = {
+  speed: 6.2, capacity: 30, capacityPerLevel: 20, meatPrice: 5,
+  pickup: 2, dropLimit: 320, stockLimit: 240, serveInterval: .4,
+  bearHp: 30, lootPerBear: 3, herd: 24, herdPerLevel: 8, maxBears: 48, respawn: 7,
+  bearSpeed: 2.3, aggro: 6, biteRange: 1.45, biteDamage: 2, biteInterval: 1.5, maxBiters: 3,
+  regenCamp: 10, regenField: 1.2,
+};
+export const camp = { minX: -9, maxX: 9, minZ: -6, maxZ: 6.5 };
+export const table = { x: 7.2, z: 3.6 };
+export const tableRange = 2.4;
+export const cashPoint = { x: 4.4, z: 5.2 };
+export const cashRange = 1.8;
+export const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+export const herdSize = s => Math.min(config.maxBears, config.herd + s.upgrades.herd * config.herdPerLevel);
+export const worldBounds = s => { const grow = s.upgrades.herd * 4; return { minX: -27 - grow, maxX: 27 + grow, minZ: -38 - grow, maxZ: 10 }; };
+export const capacity = s => config.capacity + s.upgrades.bag * config.capacityPerLevel;
+export const moveSpeed = s => config.speed * (1 + s.upgrades.speed * .15);
+export const inCamp = p => p.x >= camp.minX && p.x <= camp.maxX && p.z >= camp.minZ && p.z <= camp.maxZ;
+
+// Deterministic pseudo-random so a fresh camp is identical in every test.
+const noise = n => { const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
+function bear(i) {
+  const ring = Math.floor(i / 8), slot = i % 8, angle = slot / 8 * Math.PI * 2 + ring * .4 + noise(i) * .6;
+  const radius = 2.5 + ring * 2.6 + noise(i + 100) * 1.5;
+  const hx = Math.cos(angle) * radius * 1.4, hz = -17 + Math.sin(angle) * radius;
+  return { id: i, x: hx, z: hz, hx, hz, hp: config.bearHp, cool: 1 + noise(i + 7), respawn: 0 };
 }
-export function serialize(s){return JSON.stringify(s);}
-export function parseSave(text){const v=JSON.parse(text);if(!v||![2,3,4,5].includes(v.version))throw Error('version');if(v.version===2){v.version=3;v.assistant=newAssistant();v.buildHold=newBuildHold();}if(v.version===3){v.version=4;v.customers=newCustomers();}if(v.version===4){v.version=5;v.pendingCash=0;}if(!Number.isSafeInteger(v.pendingCash)||v.pendingCash<0)throw Error('cash');if(!validCustomers(v.customers))throw Error('customers');const s=fresh();for(const k of ['x','z','hp','coins','earned','kills','sold','time','helperTimer'])if(!Number.isFinite(v[k])||v[k]<(['x','z'].includes(k)?-100:0))throw Error('bad save');for(const k of ['attack','transfer'])if(!Number.isFinite(v[k]))throw Error('cooldown');if(!Array.isArray(v.bag)||v.bag.length>168||v.bag.some(x=>!['raw','cut','meal'].includes(x)))throw Error('bag');for(const k of ['weapon','bag','speed'])if(!Number.isInteger(v.upgrades?.[k])||v.upgrades[k]<0||v.upgrades[k]>5)throw Error('upgrade');for(const st of stations){if(!Array.isArray(v.queues?.[st.id])||v.queues[st.id].length>config.queueLimit||v.queues[st.id].some(x=>x!==st.input))throw Error('queue');if(!Number.isFinite(v.timers?.[st.id])||v.timers[st.id]<0)throw Error('timer');}for(const k of ['cut','grill'])if(!Number.isInteger(v.outputs?.[k])||v.outputs[k]<0)throw Error('outputs');if(typeof v.expanded!=='boolean'||typeof v.helper!=='boolean')throw Error('flags');if(!Array.isArray(v.bears)||v.bears.length!==9||v.bears.some((b,i)=>b.id!==i||['x','z','hx','hz','hp','cool','respawn'].some(k=>!Number.isFinite(b[k]))))throw Error('bears');if(!Array.isArray(v.drops)||v.drops.some(d=>!Number.isFinite(d.x)||!Number.isFinite(d.z)||d.type!=='raw'))throw Error('drops');if(!v.assistant||['x','z','timer'].some(k=>!Number.isFinite(v.assistant[k]))||!Number.isInteger(v.assistant.load)||v.assistant.load<0||v.assistant.load>12||!['idle','collect','return'].includes(v.assistant.phase))throw Error('assistant');for(const key of Object.keys(s))s[key]=v[key];s.buildHold=newBuildHold();s.hp=Math.min(100,s.hp);s.x=Math.max(-14,Math.min(worldBounds(s).maxX,s.x));s.z=Math.max(s.expanded?-27:-17,Math.min(12,s.z));return s;}
-export function restore(text){try{return parseSave(text);}catch{return fresh();}}
+export function fresh() {
+  return {
+    version: 6, x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
+    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0 }, helper: false,
+    paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0 }, padLatch: null,
+    attack: 0, transfer: 0, serve: 0, cashTimer: 0, payTimer: 0, time: 0,
+    customers: newCustomers(), assistant: newAssistant(),
+    bears: Array.from({ length: config.maxBears }, (_, i) => bear(i)), drops: [],
+  };
+}
+export const padState = (s, key) => {
+  const lvl = level(s, key), cost = price(s, key);
+  return { level: lvl, max: maxLevel(key), done: cost === null, cost, paid: s.paid[key], remaining: cost === null ? 0 : cost - s.paid[key], locked: key === 'helper' && !canHire(s) };
+};
+// Instant purchase used by tests and as a fallback; the pads pay gradually.
+export function buy(s, key) {
+  const cost = price(s, key);
+  if (cost === null || (key === 'helper' && !canHire(s))) return false;
+  const due = cost - s.paid[key];
+  if (s.coins < due) return false;
+  s.coins -= due; s.paid[key] = 0; apply(s, key); return true;
+}
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+export function step(s, dt, input = { x: 0, z: 0 }) {
+  const events = [];
+  const bounds = worldBounds(s);
+  s.time += dt;
+  const len = Math.max(1, Math.hypot(input.x, input.z));
+  if (Math.hypot(input.x, input.z) > .05) s.face = Math.atan2(input.x, input.z);
+  s.x = Math.max(bounds.minX, Math.min(bounds.maxX, s.x + input.x / len * moveSpeed(s) * dt));
+  s.z = Math.max(bounds.minZ, Math.min(bounds.maxZ, s.z + input.z / len * moveSpeed(s) * dt));
+  s.attack -= dt;
+  s.hp = Math.min(100, s.hp + (inCamp(s) ? config.regenCamp : config.regenField) * dt);
+
+  // Wide sword swing: every living bear inside the fan takes damage at once.
+  const weapon = weaponStats(s.upgrades.weapon);
+  const active = s.bears.filter(b => b.id < herdSize(s));
+  const reach = active.filter(b => b.hp > 0 && distance(s, b) < weapon.range);
+  if (reach.length && s.attack <= 0) {
+    const nearest = reach.sort((a, b) => distance(s, a) - distance(s, b))[0];
+    const aim = Math.atan2(nearest.x - s.x, nearest.z - s.z);
+    s.face = aim; s.attack = weapon.interval;
+    events.push({ type: 'slash', x: s.x, z: s.z, aim, range: weapon.range, angle: weapon.angle });
+    for (const b of reach) {
+      if (Math.abs(wrap(Math.atan2(b.x - s.x, b.z - s.z) - aim)) > weapon.angle / 2) continue;
+      b.hp -= weapon.damage;
+      events.push({ type: 'hit', x: b.x, z: b.z, damage: weapon.damage });
+      if (b.hp <= 0) {
+        s.kills++; b.respawn = config.respawn;
+        for (let j = 0; j < config.lootPerBear; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * .8, z: b.z + Math.sin(j * 2.1 + b.id) * .8 });
+        events.push({ type: 'kill', x: b.x, z: b.z });
+      }
+    }
+  }
+  let biters = 0;
+  for (const b of active) {
+    if (b.hp <= 0) {
+      b.respawn -= dt;
+      if (b.respawn <= 0 && s.drops.length < config.dropLimit) Object.assign(b, bear(b.id), { cool: 1.2 });
+      continue;
+    }
+    b.cool -= dt;
+    const d = distance(s, b);
+    if (d < config.aggro && !inCamp(s)) {
+      if (d > config.biteRange * .8) { b.x += (s.x - b.x) / d * config.bearSpeed * dt; b.z += (s.z - b.z) / d * config.bearSpeed * dt; }
+      else if (b.cool <= 0 && biters < config.maxBiters) { biters++; s.hp -= config.biteDamage; b.cool = config.biteInterval; events.push({ type: 'hurt', damage: config.biteDamage, x: b.x, z: b.z }); }
+    } else {
+      const roam = { x: b.hx + Math.sin(s.time * .21 + b.id * 2.1) * 1.6, z: b.hz + Math.cos(s.time * .17 + b.id * 1.7) * 1.2 };
+      const home = distance(roam, b);
+      if (home > .08) { const stride = Math.min(home, dt * .9); b.x += (roam.x - b.x) / home * stride; b.z += (roam.z - b.z) / home * stride; }
+    }
+  }
+  if (s.hp <= 0) { s.x = 0; s.z = 2; s.hp = 100; events.push({ type: 'rescue' }); }
+
+  // Meat on the ground is collected automatically while there is room on the back.
+  let picked = 0;
+  s.drops = s.drops.filter(d => {
+    if (picked < 8 && s.meat < capacity(s) && distance(s, d) < config.pickup) {
+      picked++; s.meat++; events.push({ type: 'pickup', from: { x: d.x, z: d.z }, to: { x: s.x, z: s.z } }); return false;
+    }
+    return true;
+  });
+
+  // Unloading at the sales table is fast: the whole stack slides over in a few seconds.
+  if (s.meat > 0 && distance(s, table) < tableRange && s.stock < config.stockLimit) {
+    s.transfer -= dt;
+    while (s.transfer <= 0 && s.meat > 0 && s.stock < config.stockLimit) {
+      s.meat--; s.stock++; s.transfer += .035;
+      events.push({ type: 'deposit', from: { x: s.x, z: s.z }, to: { x: table.x, z: table.z } });
+    }
+  } else s.transfer = 0;
+
+  // Customers buy raw meat one piece at a time and leave their cash beside the table.
+  moveCustomers(s.customers, dt);
+  const ready = readyCustomer(s.customers);
+  if (s.stock > 0 && ready) {
+    s.serve += dt;
+    if (s.serve >= config.serveInterval) {
+      s.serve -= config.serveInterval; s.stock--;
+      const customer = takeMeat(s.customers);
+      s.cash += config.meatPrice; s.earned += config.meatPrice; s.sold++;
+      events.push({ type: 'sale', value: config.meatPrice, customerId: customer.id, customer: { x: customer.x, z: customer.z } });
+    }
+  } else s.serve = 0;
+
+  // Cash stays at the table until the player walks over and gathers it.
+  if (s.cash > 0 && distance(s, cashPoint) < cashRange) {
+    s.cashTimer -= dt;
+    while (s.cashTimer <= 0 && s.cash > 0) {
+      const chunk = Math.min(s.cash, Math.max(config.meatPrice, Math.ceil(s.cash / 30)));
+      s.cash -= chunk; s.coins += chunk; s.cashTimer += .04;
+      events.push({ type: 'collect', value: chunk, from: { ...cashPoint }, to: { x: s.x, z: s.z } });
+    }
+  } else s.cashTimer = 0;
+
+  updateAssistant(s, dt, table, config.stockLimit, events);
+
+  // Ground pads drain cash gradually; the purchase lands when the price hits zero.
+  const pad = pads.find(p => distance(s, p) < padRadius);
+  if (!pad) { s.padLatch = null; s.payTimer = 0; }
+  else if (s.padLatch !== pad.id) {
+    const cost = price(s, pad.id);
+    if (cost !== null && (pad.id !== 'helper' || canHire(s))) {
+      s.payTimer -= dt;
+      while (s.payTimer <= 0 && s.coins > 0 && s.paid[pad.id] < cost) {
+        const chunk = Math.min(s.coins, cost - s.paid[pad.id], Math.max(1, Math.round(Math.max(15, cost * .7) * .05)));
+        s.coins -= chunk; s.paid[pad.id] += chunk; s.payTimer += .05;
+        events.push({ type: 'pay', id: pad.id, value: chunk, from: { x: s.x, z: s.z }, to: { x: pad.x, z: pad.z } });
+      }
+      if (s.paid[pad.id] >= cost) {
+        s.paid[pad.id] = 0; apply(s, pad.id); s.padLatch = pad.id;
+        events.push({ type: 'built', id: pad.id, name: pad.name, level: level(s, pad.id), x: pad.x, z: pad.z });
+      }
+    }
+  }
+  return events;
+}
+
+export function serialize(s) { return JSON.stringify(s); }
+const finite = (v, min = -Infinity) => Number.isFinite(v) && v >= min;
+const count = (v, max = Infinity) => Number.isInteger(v) && v >= 0 && v <= max;
+export function parseSave(text) {
+  const v = JSON.parse(text);
+  if (!v || typeof v !== 'object') throw Error('save');
+  const s = fresh();
+  if ([2, 3, 4, 5].includes(v.version)) {
+    // Earlier camps used a different production line; keep the money and
+    // the levels that still exist, and start the new loop with them.
+    for (const k of ['coins', 'earned', 'kills', 'sold']) if (count(v[k])) s[k] = v[k];
+    if (count(v.pendingCash)) s.coins += v.pendingCash;
+    for (const k of ['weapon', 'bag', 'speed']) if (count(v.upgrades?.[k])) s.upgrades[k] = Math.min(maxLevel(k), v.upgrades[k]);
+    if (v.helper === true) s.helper = true;
+    return s;
+  }
+  if (v.version !== 6) throw Error('version');
+  for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer']) if (!Number.isFinite(v[k])) throw Error(k);
+  for (const k of ['hp', 'time']) if (!finite(v[k], 0)) throw Error(k);
+  for (const k of ['coins', 'cash', 'earned', 'kills', 'sold', 'meat', 'stock']) if (!count(v[k])) throw Error(k);
+  if (v.meat > 400 || v.stock > config.stockLimit) throw Error('stacks');
+  for (const k of Object.keys(s.upgrades)) if (!count(v.upgrades?.[k], maxLevel(k))) throw Error('upgrade');
+  for (const k of Object.keys(s.paid)) if (!count(v.paid?.[k])) throw Error('paid');
+  if (typeof v.helper !== 'boolean') throw Error('helper');
+  if (!validCustomers(v.customers)) throw Error('customers');
+  if (!Array.isArray(v.bears) || v.bears.length !== config.maxBears || v.bears.some((b, i) => b.id !== i || ['x', 'z', 'hx', 'hz', 'hp', 'cool', 'respawn'].some(k => !Number.isFinite(b[k])))) throw Error('bears');
+  if (!Array.isArray(v.drops) || v.drops.length > config.dropLimit + 50 || v.drops.some(d => !Number.isFinite(d.x) || !Number.isFinite(d.z))) throw Error('drops');
+  if (!v.assistant || ['x', 'z', 'timer'].some(k => !Number.isFinite(v.assistant[k])) || !count(v.assistant.load, assistantCapacity) || !['idle', 'collect', 'return'].includes(v.assistant.phase)) throw Error('assistant');
+  for (const key of Object.keys(s)) if (key in v) s[key] = v[key];
+  s.drops = v.drops.map(d => ({ x: d.x, z: d.z }));
+  s.padLatch = null; s.payTimer = 0; s.hp = Math.min(100, s.hp);
+  const b = worldBounds(s);
+  s.x = Math.max(b.minX, Math.min(b.maxX, s.x)); s.z = Math.max(b.minZ, Math.min(b.maxZ, s.z));
+  for (const key of Object.keys(s.paid)) { const cost = price(s, key); if (cost === null) s.paid[key] = 0; else s.paid[key] = Math.min(s.paid[key], cost - 1); }
+  return s;
+}
+export function restore(text) { try { return parseSave(text); } catch { return fresh(); } }
