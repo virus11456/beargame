@@ -88,3 +88,5 @@ h1{font-size:46px;letter-spacing:5px;margin:18px 0}h1 span{display:block;font-si
 @media(max-width:600px){.story-card{padding:22px 20px 18px;border-radius:18px}.story-card h2{font-size:22px}.story-card p{font-size:13px}}
 @media(max-height:520px){.story-card{padding:12px 20px}.story-card h2{font-size:18px;margin:2px 0}.story-card p{font-size:12px;line-height:1.6;margin-bottom:8px}.story-goal{margin-bottom:8px}.story-actions button{padding:8px 12px}}
 
+
+.update{position:absolute;top:calc(var(--top) + 54px);right:var(--right);z-index:6;background:#f0b23a;color:#4a2f05;border-radius:12px;padding:0 14px;min-height:38px;font-size:12px;font-weight:900;box-shadow:0 4px 0 #b7801c;display:flex;align-items:center;gap:6px;animation:pulse 1.2s infinite}

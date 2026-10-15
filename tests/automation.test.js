@@ -85,3 +85,9 @@ test('buying buildings raises them in order and grows the fenced camp', async ()
   assert.deepEqual(parseSave(serialize(s)).buildings, s.buildings);
   const old = { ...fresh(), upgrades: { ...fresh().upgrades, weapon: 2, bag: 1 }, helper: true }; delete old.buildings; assert.deepEqual(parseSave(JSON.stringify(old)).buildings, ['forge', 'storage', 'hut']);
 });
+
+test('a helper stalled on the way home steps back to a gate and still delivers', () => {
+  const s = fresh(); s.helper = true; s.x = 0; s.z = 0; Object.assign(s.assistant, { x: -10, z: 3, load: 15, phase: 'return' });
+  for (let i = 0; i < 20 * 30; i++) { step(s, 1 / 30); if (i < 100) { s.assistant.x = -10; s.assistant.z = 3; } }
+  assert.equal(s.assistant.load, 0); assert.equal(s.stock + s.sold, 15);
+});

@@ -281,6 +281,19 @@ function endJoy(e) {
   clearJoy(); if (tap) walkTo(e.clientX, e.clientY);
 }
 $('game').onpointerup = endJoy; $('game').onpointercancel = endJoy; $('game').onlostpointercapture = e => { if (e.pointerId === joyId) clearJoy(); };
+// Tell a long-lived tab when a newer build has been deployed.
+const bundleSrc = document.querySelector('script[type=module]')?.getAttribute('src');
+let updateShown = false;
+async function checkForUpdate() {
+  if (updateShown || !bundleSrc) return;
+  try {
+    const html = await (await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' })).text();
+    const latest = html.match(/<script[^>]*type="module"[^>]*src="([^"]+)"/)?.[1];
+    if (latest && latest !== bundleSrc) { updateShown = true; $('update').hidden = false; }
+  } catch { }
+}
+$('update').onclick = () => { save(); location.reload(); };
+setInterval(checkForUpdate, 180000); document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
 // iOS Safari still allows pinch and double-tap zoom unless the gestures are cancelled.
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, e => e.preventDefault(), { passive: false });
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.scale !== undefined && e.scale !== 1) e.preventDefault(); }, { passive: false });

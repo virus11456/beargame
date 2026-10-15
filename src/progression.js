@@ -1,4 +1,4 @@
-import { routeTarget, fenceStep, expandedCamp, buildingSlots } from './camp.js';
+import { routeTarget, fenceStep, expandedCamp, buildingSlots, gatesOf } from './camp.js';
 import { stageOf } from './stages.js';
 // Ground upgrade pads. Standing on a pad drains carried cash into it bit by bit,
 // exactly like the reference playable: the price counts down and the upgrade
@@ -103,6 +103,8 @@ export function updateAssistant(s, dt, table, stockLimit, events) {
   if (a.avoid && s.time > a.avoid.until) a.avoid = undefined;
   const loot = s.drops.filter(d => !(a.avoid && Math.hypot(d.x - a.avoid.x, d.z - a.avoid.z) < 2)).sort((x, y) => dist(a, x) - dist(a, y))[0];
   if (a.stuck > 2.5 && loot && a.phase === 'collect') { a.avoid = { x: loot.x, z: loot.z, until: s.time + 10 }; a.stuck = 0; return; }
+  // Last resort on the way home: step back to the nearest gate mouth and retry.
+  if (a.stuck > 3 && a.phase === 'return') { const g = gatesOf(c).sort((p, q) => dist(a, p) - dist(a, q))[0]; a.x = g.x; a.z = g.z + (g.z < 0 ? -1 : 1); a.stuck = 0; }
   if (a.load >= assistantCapacity || a.phase === 'return' || (!loot && a.load > 0)) {
     a.phase = 'return';
     if (move(a, table, dt, 5, c) && a.timer === 0 && s.stock < stockLimit && a.load > 0) {
