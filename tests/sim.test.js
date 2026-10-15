@@ -18,7 +18,7 @@ test('a sword swing hits every bear inside the fan at once', () => {
 });
 
 test('hunting drops meat, meat is picked up automatically and respects the carry limit', () => {
-  const s = fresh(); s.x = 0; s.z = -21;
+  const s = fresh(); s.x = s.bears[0].x; s.z = s.bears[0].z + 1;
   wait(s, 6);
   assert.ok(s.kills >= 3, `kills ${s.kills}`);
   assert.ok(s.meat > 0);
@@ -90,7 +90,7 @@ test('corrupt saves fall back to a fresh camp and version five camps keep their 
   const old = { version: 5, coins: 100, pendingCash: 40, earned: 900, kills: 12, sold: 70, upgrades: { weapon: 3, bag: 9, speed: 1 }, helper: true, queues: {}, bears: [] };
   const s = parseSave(JSON.stringify(old));
   assert.equal(s.version, 7); assert.equal(s.coins, 140); assert.equal(s.earned, 900); assert.equal(s.sold, 70);
-  assert.deepEqual(s.upgrades, { weapon: 3, bag: 5, speed: 1, herd: 0 }); assert.equal(s.helper, true); assert.equal(s.meat, 0); assert.equal(s.version, 7);
+  assert.deepEqual(s.upgrades, { weapon: 3, bag: 5, speed: 1, herd: 0, tower: 0, hunter: 0 }); assert.equal(s.helper, true); assert.equal(s.meat, 0); assert.equal(s.version, 7);
 });
 
 test('a bear that the player walks away from stops chasing and roams near home', () => {

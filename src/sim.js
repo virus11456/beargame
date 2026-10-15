@@ -3,10 +3,10 @@
 // meat → drop it on the sales table → customers pay cash at the table →
 // collect the cash → stand on ground pads to buy upgrades and expand.
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
-import { pads, padRadius, price, level, maxLevel, canHire, apply, weaponStats, newAssistant, assistantCapacity, updateAssistant } from './progression.js';
+import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter } from './progression.js';
 import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside } from './camp.js';
 import { stages, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
-export { price, level, canHire, pads, weaponStats, camp, gate, inCamp, routeTarget, stages, stageOf, prey, kindOf, stageCleared, hasNext };
+export { price, level, canHire, unlocked, automation, fullyAutomated, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, stages, stageOf, prey, kindOf, stageCleared, hasNext };
 
 export const config = {
   speed: 6.2, capacityPerLevel: 20,
@@ -23,27 +23,30 @@ export const cashPoint = { x: 4.4, z: 5.2 };
 export const cashRange = 1.8;
 export const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 export const herdSize = s => Math.min(config.maxBears, baseHerd(stageOf(s)) + s.upgrades.herd * config.herdPerLevel);
-export const worldBounds = s => { const grow = s.upgrades.herd * 4; return { minX: -27 - grow, maxX: 27 + grow, minZ: -38 - grow, maxZ: 10 }; };
+export const worldBounds = s => { const grow = s.upgrades.herd * 4; return { minX: -34 - grow, maxX: 30, minZ: -34 - grow, maxZ: 30 + grow }; };
 export const capacity = s => stageOf(s).capacity + s.upgrades.bag * config.capacityPerLevel;
 export const moveSpeed = s => config.speed * (1 + s.upgrades.speed * .15);
 
 // Deterministic pseudo-random so a fresh camp is identical in every test.
 const noise = n => { const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
+// Prey gathers in three dense packs around the camp (north, west, south);
+// the east stays clear for the customer path. Giants sit at the back of a pack.
+const packs = [{ x: 0, z: -17 }, { x: -21, z: -1 }, { x: -2, z: 17.5 }];
 function bear(i, stage = stages[0]) {
-  const ring = Math.floor(i / 8), slot = i % 8, angle = slot / 8 * Math.PI * 2 + ring * .4 + noise(i) * .6;
-  const kind = kindOf(stage, i);
-  const radius = (kind === 'giant' ? 9 : 2.5) + ring * 2.6 + noise(i + 100) * 1.5;
-  const hx = Math.cos(angle) * radius * 1.4, hz = Math.min(camp.minZ - 3.5, -17 + Math.sin(angle) * radius);
+  const kind = kindOf(stage, i), pack = packs[i % 3], j = Math.floor(i / 3), ring = Math.floor(j / 6), slot = j % 6;
+  const angle = slot / 6 * Math.PI * 2 + ring * .5 + noise(i) * .5;
+  const radius = (ring === 0 ? 1.4 : 1.4 + ring * 2.3) + (kind === 'giant' ? 5 : 0) + noise(i + 100) * .8;
+  const hx = pack.x + Math.cos(angle) * radius * 1.25, hz = pack.z + Math.sin(angle) * radius;
   return { id: i, x: hx, z: hz, hx, hz, hp: prey[kind].hp, cool: 1 + noise(i + 7), respawn: 0 };
 }
 export function fresh(stage = 0, unlocked = 0) {
   const def = stages[Math.max(0, Math.min(stages.length - 1, stage))];
   return {
-    version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0,
+    version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {},
     x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
-    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0 }, helper: false,
-    paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0 }, padLatch: null,
-    attack: 0, transfer: 0, serve: 0, cashTimer: 0, payTimer: 0, time: 0,
+    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0 }, helper: false, cashier: false, hunters: [],
+    paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0, tower: 0, cashier: 0, hunter: 0 }, padLatch: null,
+    attack: 0, towerTimer: 0, transfer: 0, serve: 0, cashTimer: 0, payTimer: 0, time: 0,
     customers: newCustomers(), assistant: newAssistant(),
     bears: Array.from({ length: config.maxBears }, (_, i) => bear(i, def)), drops: [],
   };
@@ -54,7 +57,8 @@ export function startStage(s, stage) {
   const index = Math.max(0, Math.min(stages.length - 1, stage));
   if (index > s.unlocked) return s;
   const next = fresh(index, s.unlocked);
-  next.lifetime = s.lifetime + s.earned;
+  next.lifetime = s.lifetime + s.earned; next.name = s.name; next.totalKills = s.totalKills + s.kills;
+  next.records = { ...s.records, [s.stage]: { kills: Math.max(s.kills, s.records[s.stage]?.kills || 0), earned: Math.max(s.earned, s.records[s.stage]?.earned || 0) } };
   return next;
 }
 export const nextStage = s => stageCleared(s) && hasNext(s) ? startStage({ ...s, unlocked: Math.max(s.unlocked, s.stage + 1) }, s.stage + 1) : s;
@@ -65,12 +69,17 @@ export const padState = (s, key) => {
 // Instant purchase used by tests and as a fallback; the pads pay gradually.
 export function buy(s, key) {
   const cost = price(s, key);
-  if (cost === null || (key === 'helper' && !canHire(s))) return false;
+  if (cost === null || !unlocked(s, key)) return false;
   const due = cost - s.paid[key];
   if (s.coins < due) return false;
   s.coins -= due; s.paid[key] = 0; apply(s, key); return true;
 }
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+function kill(s, b, events) {
+  const kind = preyOf(s, b); s.kills++; b.respawn = kind.respawn;
+  for (let j = 0; j < kind.loot; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08) });
+  events.push({ type: 'kill', x: b.x, z: b.z, kind: kindOf(stageOf(s), b.id) });
+}
 
 export function step(s, dt, input = { x: 0, z: 0 }) {
   const events = [];
@@ -97,11 +106,18 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
       if (Math.abs(wrap(Math.atan2(b.x - s.x, b.z - s.z) - aim)) > weapon.angle / 2) continue;
       b.hp -= weapon.damage;
       events.push({ type: 'hit', x: b.x, z: b.z, damage: weapon.damage });
-      if (b.hp <= 0) {
-        const kind = preyOf(s, b); s.kills++; b.respawn = kind.respawn;
-        for (let j = 0; j < kind.loot; j++) s.drops.push({ x: b.x + Math.cos(j * 2.1 + b.id) * (.8 + j * .08), z: b.z + Math.sin(j * 2.1 + b.id) * (.8 + j * .08) });
-        events.push({ type: 'kill', x: b.x, z: b.z, kind: kindOf(stageOf(s), b.id) });
-      }
+      if (b.hp <= 0) kill(s, b, events);
+    }
+  }
+  // The arrow tower outside the gate picks the nearest prey in range.
+  const tower = towerStats(s.upgrades.tower);
+  s.towerTimer -= dt;
+  if (tower && s.towerTimer <= 0) {
+    const mark = active.filter(b => b.hp > 0 && distance(towerPoint, b) < tower.range).sort((a, b) => distance(towerPoint, a) - distance(towerPoint, b))[0];
+    if (mark) {
+      s.towerTimer = tower.interval; mark.hp -= tower.damage;
+      events.push({ type: 'arrow', from: { ...towerPoint }, to: { x: mark.x, z: mark.z } }, { type: 'hit', x: mark.x, z: mark.z, damage: tower.damage });
+      if (mark.hp <= 0) kill(s, mark, events);
     }
   }
   let biters = 0;
@@ -159,23 +175,26 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
   } else s.serve = 0;
 
   // Cash stays at the table until the player walks over and gathers it.
-  if (s.cash > 0 && distance(s, cashPoint) < cashRange) {
+  // Cash stays at the table until the player (or the cashier) gathers it.
+  const near = distance(s, cashPoint) < cashRange;
+  if (s.cash > 0 && (near || s.cashier)) {
     s.cashTimer -= dt;
     while (s.cashTimer <= 0 && s.cash > 0) {
-      const chunk = Math.min(s.cash, Math.max(meatPrice(s), Math.ceil(s.cash / 30)));
-      s.cash -= chunk; s.coins += chunk; s.cashTimer += .04;
-      events.push({ type: 'collect', value: chunk, from: { ...cashPoint }, to: { x: s.x, z: s.z } });
+      const chunk = near ? Math.min(s.cash, Math.max(meatPrice(s), Math.ceil(s.cash / 30))) : Math.min(s.cash, meatPrice(s) * 2);
+      s.cash -= chunk; s.coins += chunk; s.cashTimer += near ? .04 : .3;
+      events.push({ type: 'collect', value: chunk, actor: near ? undefined : 'cashier', from: { ...cashPoint }, to: { x: s.x, z: s.z } });
     }
   } else s.cashTimer = 0;
 
   updateAssistant(s, dt, table, config.stockLimit, events);
+  updateHunters(s, dt, active, events, kill);
 
   // Ground pads drain cash gradually; the purchase lands when the price hits zero.
   const pad = pads.find(p => distance(s, p) < padRadius);
   if (!pad) { s.padLatch = null; s.payTimer = 0; }
   else if (s.padLatch !== pad.id) {
     const cost = price(s, pad.id);
-    if (cost !== null && (pad.id !== 'helper' || canHire(s))) {
+    if (cost !== null && unlocked(s, pad.id)) {
       s.payTimer -= dt;
       while (s.payTimer <= 0 && s.coins > 0 && s.paid[pad.id] < cost) {
         const chunk = Math.min(s.coins, cost - s.paid[pad.id], Math.max(1, Math.round(Math.max(15, cost * .7) * .05)));
@@ -185,6 +204,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
       if (s.paid[pad.id] >= cost) {
         s.paid[pad.id] = 0; apply(s, pad.id); s.padLatch = pad.id;
         events.push({ type: 'built', id: pad.id, name: pad.name, level: level(s, pad.id), x: pad.x, z: pad.z });
+        if (fullyAutomated(s)) events.push({ type: 'automated' });
       }
     }
   }
@@ -211,7 +231,10 @@ export function parseSave(text) {
   if (v.version !== 7) throw Error('version');
   if (!count(v.stage, stages.length - 1) || !count(v.unlocked, stages.length - 1) || typeof v.cleared !== 'boolean' || !count(v.lifetime)) throw Error('stage');
   const stage = stages[v.stage];
-  for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer']) if (!Number.isFinite(v[k])) throw Error(k);
+  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {};
+  if (typeof v.name !== 'string' || v.name.length > 16 || typeof v.cashier !== 'boolean' || !count(v.totalKills) || typeof v.records !== 'object' || v.records === null) throw Error('profile');
+  if (!Array.isArray(v.hunters) || v.hunters.length > 3 || v.hunters.some(h => !Number.isFinite(h.x) || !Number.isFinite(h.z) || !finite(h.cool, 0))) throw Error('hunters');
+  for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer', 'towerTimer']) if (!Number.isFinite(v[k])) throw Error(k);
   for (const k of ['hp', 'time']) if (!finite(v[k], 0)) throw Error(k);
   for (const k of ['coins', 'cash', 'earned', 'kills', 'sold', 'meat', 'stock']) if (!count(v[k])) throw Error(k);
   if (v.meat > 400 || v.stock > config.stockLimit) throw Error('stacks');
@@ -228,6 +251,8 @@ export function parseSave(text) {
   for (const key of Object.keys(s)) if (key in v) s[key] = v[key];
   s.drops = v.drops.map(d => ({ x: d.x, z: d.z }));
   s.padLatch = null; s.payTimer = 0; s.hp = Math.min(100, s.hp); s.unlocked = Math.max(s.unlocked, s.stage); s.cleared = stageCleared(s);
+  s.hunters = s.hunters.slice(0, s.upgrades.hunter).map(h => ({ x: h.x, z: h.z, cool: h.cool })); while (s.hunters.length < s.upgrades.hunter) s.hunters.push(newHunter(s.hunters.length));
+  s.records = Object.fromEntries(Object.entries(s.records).filter(([k, r]) => count(+k, stages.length - 1) && r && count(r.kills) && count(r.earned)).map(([k, r]) => [k, { kills: r.kills, earned: r.earned }]));
   const b = worldBounds(s);
   s.x = Math.max(b.minX, Math.min(b.maxX, s.x)); s.z = Math.max(b.minZ, Math.min(b.maxZ, s.z));
   for (const key of Object.keys(s.paid)) { const cost = price(s, key); if (cost === null) s.paid[key] = 0; else s.paid[key] = Math.min(s.paid[key], cost - 1); }

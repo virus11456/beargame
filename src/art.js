@@ -79,3 +79,48 @@ export function createTree(scale = 1) {
   }
   g.scale.setScalar(scale); return g;
 }
+
+// Six distinct swords, one per weapon level. The blade points along +z and
+// the grip sits at the origin so the pivot in game.js can swing any of them.
+const weaponLooks = [
+  { blade: '#d9e1e6', edge: '#f4f8fa', guard: '#8a6a4a', grip: '#6b4b32', len: .95, wide: .09, thick: .04 },
+  { blade: '#cfd8de', edge: '#ffffff', guard: '#c9a052', grip: '#5a3f2a', len: 1.4, wide: .11, thick: .045 },
+  { blade: '#9fb0bb', edge: '#e8f1f5', guard: '#b58a3c', grip: '#3f2c1f', len: 1.5, wide: .2, thick: .06 },
+  { blade: '#8b98a3', edge: '#dfe8ee', guard: '#d4b04a', grip: '#2c2320', len: 2.1, wide: .22, thick: .07 },
+  { blade: '#a9e4ff', edge: '#ffffff', guard: '#5aa9d8', grip: '#24405a', len: 1.9, wide: .18, thick: .06, glow: '#7fd0ff' },
+  { blade: '#8de3c4', edge: '#d7b5ff', guard: '#f0c75a', grip: '#2a1f3a', len: 2.3, wide: .24, thick: .07, glow: '#a37bff' },
+];
+export function createWeapon(level = 0) {
+  const w = weaponLooks[Math.max(0, Math.min(weaponLooks.length - 1, level))];
+  const g = new THREE.Group();
+  const bladeMat = w.glow ? new THREE.MeshStandardMaterial({ color: w.blade, emissive: w.glow, emissiveIntensity: .55, roughness: .4 }) : material(w.blade, { roughness: .35, metalness: .25 });
+  const blade = new THREE.Mesh(rounded, bladeMat); blade.position.set(0, 0, .25 + w.len / 2); blade.scale.set(w.wide, w.thick, w.len); blade.castShadow = true; g.add(blade);
+  part(g, w.edge, 0, w.thick * .55, .25 + w.len / 2, w.wide * .45, .015, w.len * .96, unit, false);
+  if (level >= 3) part(g, w.edge, 0, 0, .25 + w.len / 2, w.wide * .18, w.thick * 1.1, w.len * .9, unit, false);
+  const tip = part(g, w.blade, 0, 0, .25 + w.len + .12, w.wide, w.thick, .3, smooth, false); tip.material = bladeMat;
+  if (level === 4) for (const k of [-1, 1]) part(g, w.blade, k * w.wide * .55, 0, .25 + w.len * .7, w.wide * .5, w.thick * .8, .35, smooth, false).material = bladeMat;
+  part(g, w.guard, 0, 0, .22, level >= 2 ? .5 : .38, .1, .09);
+  if (level >= 2) for (const k of [-1, 1]) part(g, w.guard, k * (level >= 2 ? .25 : .19), 0, .3, .08, .08, .18, smooth, false);
+  part(g, w.grip, 0, 0, -.05, .09, .09, level >= 3 ? .55 : .42);
+  part(g, w.guard, 0, 0, level >= 3 ? -.36 : -.3, .13, .13, .12, smooth, false);
+  if (level === 5) { const halo = new THREE.Mesh(new THREE.TorusGeometry(.2, .03, 8, 24), new THREE.MeshBasicMaterial({ color: '#c9a5ff', transparent: true, opacity: .8 })); halo.position.z = .22; g.add(halo); }
+  g.userData.look = w; return g;
+}
+export const slashColors = [['#ff4fd0', '#ffd0f4'], ['#ff4fd0', '#ffd0f4'], ['#ff6a3d', '#ffe0b0'], ['#ff6a3d', '#ffe0b0'], ['#5fc8ff', '#e3f6ff'], ['#9d6bff', '#c8f7e6']];
+
+// Arrow tower outside the gate: a timber frame, a platform and a crossbow
+// that grows a storey per level.
+export function createTower(level = 1) {
+  const g = new THREE.Group();
+  const h = 2.2 + (level - 1) * .9;
+  for (const x of [-.6, .6]) for (const z of [-.6, .6]) { const leg = part(g, '#8a6a4e', x, h / 2, z, .18, h, .18, unit); leg.rotation.x = z * .08; leg.rotation.z = -x * .08; }
+  for (let y = .9; y < h; y += .9) part(g, '#a67c52', 0, y, 0, 1.5, .08, 1.5, unit, false).scale.set(1.45, .08, 1.45);
+  part(g, '#b98b5e', 0, h + .05, 0, 1.9, .12, 1.9);
+  for (const x of [-.9, .9]) part(g, '#8a6a4e', x, h + .45, 0, .1, .7, 1.9, unit, false);
+  for (const z of [-.9, .9]) part(g, '#8a6a4e', 0, h + .45, z, 1.9, .7, .1, unit, false);
+  const bow = new THREE.Group(); bow.position.set(0, h + .55, 0); g.add(bow);
+  part(bow, '#445c6a', 0, .1, 0, .22, .18, 1.1); part(bow, '#9c7345', 0, .12, .45, 1.1, .1, .12); part(bow, '#e5e4cc', 0, .14, .2, .9, .03, .03, unit, false);
+  if (level >= 2) { const roof = new THREE.Mesh(new THREE.ConeGeometry(1.5, .9, 4), material('#c43f2d')); roof.position.y = h + 1.5; roof.rotation.y = Math.PI / 4; roof.castShadow = true; g.add(roof); }
+  if (level >= 3) { part(g, '#6b4b32', 0, h + 2.4, 0, .06, 1.4, .06, unit, false); part(g, '#f0c75a', .35, h + 2.85, 0, .7, .4, .03, unit, false); }
+  g.userData.bow = bow; return g;
+}

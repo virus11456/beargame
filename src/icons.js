@@ -13,6 +13,10 @@ export const icons = {
   lock: `<rect x="5" y="10.5" width="14" height="10.5" rx="2.5" fill="#f3e9d4"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="#f3e9d4" stroke-width="2.4"/><circle cx="12" cy="15.5" r="1.6" fill="#6d5a48"/>`,
   check: `<path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`,
   arrow: `<path d="M5 12h12M12 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`,
+  tower: `<path d="M7 21V9h10v12z" fill="#b98b5e"/><path d="M5 9l7-6 7 6z" fill="#c43f2d"/><rect x="10.5" y="13" width="3" height="8" fill="#5a3f2a"/><rect x="6" y="8.5" width="12" height="1.6" fill="#8a6a4e"/><path d="M9 15.5h6" stroke="#e5e4cc" stroke-width="1"/>`,
+  cashier: `<rect x="4" y="12" width="16" height="10" rx="4" fill="#3f7fa8"/><rect x="8.5" y="14" width="7" height="7" rx="1.5" fill="#f4f1e6"/><circle cx="12" cy="7.2" r="3.8" fill="#f1c9a3"/><path d="M7.8 6.8a4.3 4.3 0 0 1 8.4 0z" fill="#2c3e50"/><rect x="9.5" y="16" width="5" height="3" rx="1" fill="#5fd45a"/>`,
+  hunter: `<rect x="5" y="12" width="14" height="10.5" rx="4.5" fill="#8a5a3a"/><circle cx="12" cy="7.2" r="3.8" fill="#f1c9a3"/><path d="M7.6 7.2a4.4 4.4 0 0 1 8.8 0z" fill="#5c3b25"/><path d="M17 21.5V4" stroke="#6b4b32" stroke-width="1.6" stroke-linecap="round"/><path d="M17 1.5l2 3.5h-4z" fill="#dfe8ec"/><rect x="7.5" y="11" width="9" height="2.2" rx="1.1" fill="#e9dcc3"/>`,
+  auto: `<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M19 3.5l2 2M5 3.5l-2 2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`,
   navigate: `<path d="M12 3l7 17-7-4-7 4z" fill="currentColor"/>`,
 };
 export const icon = (name, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
