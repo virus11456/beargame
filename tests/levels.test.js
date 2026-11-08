@@ -10,7 +10,7 @@ test('eight stages: every one has a story, a theme, a herd under the cap and a g
   stages.forEach((st, i) => {
     assert.equal(st.id, i); assert.ok(themes[st.theme], st.theme); assert.ok(Object.values(st.herd).reduce((a, b) => a + b, 0) <= 60, st.name);
     for (const k of Object.keys(st.herd)) assert.ok(prey[k], k);
-    if (i < 7) { assert.ok(st.goal > 0); assert.ok(stories[i].cleared.length > 0); } else { assert.equal(st.goal, null); assert.deepEqual(st.stars, [150000, 300000]); }
+    if (i < 7) { assert.ok(st.goal > 0); assert.ok(stories[i].cleared.length > 0); } else { assert.equal(st.goal, null); assert.deepEqual(st.stars, [90000, 180000]); }
   });
   assert.ok(hasNext(fresh(4)), 'the fortress is no longer the end'); assert.ok(!hasNext(fresh(7)));
 });

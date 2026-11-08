@@ -336,7 +336,7 @@ $('pause').onclick = stop;
 $('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; saveSettings(); };
 $('music').onclick = () => { musicOn = !musicOn; $('music').textContent = `音樂：${musicOn ? '開' : '關'}`; saveSettings(); try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); startMusic(); } catch { } };
 function applyQuality() { renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; }
-$('quality').onclick = () => { low = !low; applyQuality(); saveSettings(); };
+$('quality').onclick = () => { low = !low; applyQuality(); saveSettings(); autoQuality.off = true; };
 $('sound').textContent = `音效：${sound ? '開' : '關'}`; $('music').textContent = `音樂：${musicOn ? '開' : '關'}`; applyQuality();
 $('export').onclick = async () => {
   const code = exportCode(s); let copied = false;
@@ -474,9 +474,20 @@ function updateHud() {
 
 // ---------- main loop ----------
 let prev = performance.now(), acc = 0, hudTime = 0, lastFrame = 0;
+// Automatic battery saver: if play stays under ~30 FPS for six seconds and the
+// player never picked a quality setting, switch to the low setting once.
+const autoQuality = { window: 0, frames: 0, slow: 0, off: settings.low !== undefined || (location.search.includes('debug') && !location.search.includes('autoq')) };
+function watchFrameRate(frame) {
+  if (autoQuality.off || !running || document.hidden || frame > .5) return;
+  autoQuality.window += frame; autoQuality.frames++;
+  if (autoQuality.window < 2) return;
+  const fps = autoQuality.frames / autoQuality.window; autoQuality.window = 0; autoQuality.frames = 0;
+  autoQuality.slow = fps < 30 ? autoQuality.slow + 1 : 0;
+  if (autoQuality.slow >= 3 && !low) { low = true; applyQuality(); saveSettings(); autoQuality.off = true; toast('畫面有點卡，已自動切換省電畫質（暫停選單可改回）'); }
+}
 function draw(t) {
   requestAnimationFrame(draw);
-  let dt = Math.min((t - prev) / 1000, .1); lastFrame = (t - prev) / 1000; prev = t;
+  let dt = Math.min((t - prev) / 1000, .1); lastFrame = (t - prev) / 1000; prev = t; watchFrameRate(lastFrame);
   if (running) {
     acc += dt;
     while (acc >= 1 / 30) {

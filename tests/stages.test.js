@@ -61,7 +61,7 @@ test('stage stars: income goal, double income, then full automation; the endless
   s.earned = 1200; assert.equal(starsOf(s), 1); s.earned = 2400; assert.equal(starsOf(s), 2);
   s.helper = true; s.cashier = true; s.upgrades.tower = 1; s.upgrades.hunter = 1; assert.equal(starsOf(s), 3);
   const auto = { ...fresh(), helper: true, cashier: true, upgrades: { ...fresh().upgrades, tower: 1, hunter: 1 } }; assert.equal(starsOf(auto), 0, 'automation alone is not a star');
-  const last = fresh(7); assert.deepEqual(starGoals(stageOf(last)), [150000, 300000]); last.earned = 150000; assert.equal(starsOf(last), 1); assert.deepEqual(starGoals(stageOf(fresh(4))), [30000, 60000]);
+  const last = fresh(7); assert.deepEqual(starGoals(stageOf(last)), [90000, 180000]); last.earned = 90000; assert.equal(starsOf(last), 1); assert.deepEqual(starGoals(stageOf(fresh(4))), [30000, 60000]);
   assert.equal(starLabels(stageOf(s)).length, 3);
 });
 

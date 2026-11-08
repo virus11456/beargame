@@ -27,8 +27,8 @@ export const stages = [
   { id: 3, name: '極光營地', subtitle: '極光下的大獵場', herd: { bear: 32, wolf: 16, giant: 4 }, meatPrice: 10, priceScale: 2, goal: 15000, capacity: 60, theme: 'aurora' },
   { id: 4, name: '永凍要塞', subtitle: '要塞腳下的最大獵場', herd: { bear: 34, wolf: 18, giant: 6 }, meatPrice: 12, priceScale: 2.5, goal: 30000, capacity: 70, theme: 'night' },
   { id: 5, name: '海象灣', subtitle: '海象上岸，皮厚肉多', herd: { bear: 26, wolf: 14, walrus: 12, giant: 4 }, meatPrice: 14, priceScale: 3, goal: 50000, capacity: 80, theme: 'bay' },
-  { id: 6, name: '冰峰王座', subtitle: '熊王現身，一隻掉 60 份', herd: { bear: 24, wolf: 16, walrus: 12, giant: 6, king: 1 }, meatPrice: 16, priceScale: 3.6, goal: 90000, capacity: 90, theme: 'peak' },
-  { id: 7, name: '極夜王國', subtitle: '終局：沒有上限的獵場', herd: { bear: 22, wolf: 16, walrus: 14, giant: 6, king: 2 }, meatPrice: 20, priceScale: 4.5, goal: null, stars: [150000, 300000], capacity: 100, theme: 'polar' },
+  { id: 6, name: '冰峰王座', subtitle: '熊王現身，一隻掉 60 份', herd: { bear: 24, wolf: 16, walrus: 12, giant: 6, king: 1 }, meatPrice: 16, priceScale: 3.6, goal: 60000, capacity: 90, theme: 'peak' },
+  { id: 7, name: '極夜王國', subtitle: '終局：沒有上限的獵場', herd: { bear: 22, wolf: 16, walrus: 14, giant: 6, king: 2 }, meatPrice: 20, priceScale: 4.5, goal: null, stars: [90000, 180000], capacity: 100, theme: 'polar' },
 ];
 export const maxPrey = 60;
 export const stageOf = s => stages[Math.max(0, Math.min(stages.length - 1, s.stage | 0))];
