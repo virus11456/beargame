@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, meatGeometry, meatMaterial, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
+import { preyScale, createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, meatGeometry, meatMaterial, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
 import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf, stockLimit, starsOf, starGoals, starLabels, lanesOf, padDetail } from './src/sim.js';
 import { gatesOf, maxCamp, buildingSlots } from './src/camp.js';
 import { themes } from './src/stages.js';
@@ -197,32 +197,42 @@ function applyTheme() {
 }
 // ---------- per-stage scenery: frozen lake, glacier wall, aurora ribbons, night torches ----------
 const stageProps = new THREE.Group(); scene.add(stageProps);
-let shownProps = '', auroraRibbons = [], torches = [];
+let shownProps = '', auroraRibbons = [], torches = [], floes = [];
 function buildStageProps(theme) {
   if (theme === shownProps) return; shownProps = theme;
   for (const m of stageProps.children) m.traverse?.(o => { if (o.geometry && o.userData.own) o.geometry.dispose(); });
-  stageProps.clear(); auroraRibbons = []; torches = [];
-  if (theme === 'ice' || theme === 'aurora' || theme === 'night') {
+  stageProps.clear(); auroraRibbons = []; torches = []; floes = [];
+  if (['ice', 'aurora', 'night', 'polar'].includes(theme)) {
     // A frozen lake east of the north pack, with cracks and ice crystals around the shore.
-    const lake = new THREE.Mesh(new THREE.CircleGeometry(9, 40), new THREE.MeshStandardMaterial({ color: theme === 'night' ? '#9fb9cc' : '#cfe7f3', roughness: .25, metalness: .1 }));
+    const lake = new THREE.Mesh(new THREE.CircleGeometry(9, 40), new THREE.MeshStandardMaterial({ color: theme === 'night' || theme === 'polar' ? '#9fb9cc' : '#cfe7f3', roughness: .25, metalness: .1 }));
     lake.rotation.x = -Math.PI / 2; lake.position.set(24, .02, -20); lake.scale.set(1.3, 1, 1); lake.receiveShadow = true; stageProps.add(lake);
     for (let i = 0; i < 7; i++) { const crack = box(stageProps, '#f4fbff', 24 + (noise(i) - .5) * 14, .04, -20 + (noise(i + 3) - .5) * 12, .08, .02, 2 + noise(i + 5) * 4, false); crack.rotation.y = noise(i + 9) * 3; }
     for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2, r = 10 + noise(i + 20) * 3; const c = new THREE.Mesh(new THREE.ConeGeometry(.5 + noise(i) * .5, 1.6 + noise(i + 1) * 1.8, 5), new THREE.MeshStandardMaterial({ color: '#bfe3f5', transparent: true, opacity: .85, roughness: .2 })); c.position.set(24 + Math.cos(a) * r * 1.3, .8, -20 + Math.sin(a) * r); c.rotation.z = (noise(i + 2) - .5) * .5; c.castShadow = true; stageProps.add(c); }
   }
-  if (theme === 'dusk' || theme === 'aurora' || theme === 'night') {
+  if (['dusk', 'aurora', 'night', 'peak', 'polar'].includes(theme)) {
     // Glacier wall along the far north with icicles, a backdrop for the deeper camps.
     for (let i = 0; i < 14; i++) { const x = -42 + i * 6.5, h = 7 + noise(i + 30) * 6; const slab = box(stageProps, i % 3 ? '#dbe9f0' : '#c7dde8', x, h / 2, -46 - noise(i + 31) * 3, 6.8, h, 5 + noise(i + 32) * 3); slab.rotation.y = (noise(i + 33) - .5) * .3; }
     for (let i = 0; i < 10; i++) { const icicle = new THREE.Mesh(new THREE.ConeGeometry(.35, 2.2, 5), material('#eaf6fb')); icicle.rotation.x = Math.PI; icicle.position.set(-40 + i * 8.5, 7 + noise(i + 40) * 4, -43.5); stageProps.add(icicle); }
   }
-  if (theme === 'aurora' || theme === 'night') {
+  if (['aurora', 'night', 'polar'].includes(theme)) {
     // Aurora ribbons: wavy translucent planes high above the field, animated each frame.
     for (let i = 0; i < 3; i++) {
       const geo = new THREE.PlaneGeometry(70, 7, 48, 1); geo.userData.own = true;
-      const mat = new THREE.MeshBasicMaterial({ color: i === 1 ? '#b48cff' : '#7fffc8', transparent: true, opacity: theme === 'night' ? .4 : .32, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+      const mat = new THREE.MeshBasicMaterial({ color: i === 1 ? '#b48cff' : '#7fffc8', transparent: true, opacity: theme === 'polar' ? .5 : theme === 'night' ? .4 : .32, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
       const ribbon = new THREE.Mesh(geo, mat); ribbon.position.set(-5 + i * 6, 17 + i * 2.5, -32 - i * 5); ribbon.rotation.x = -.55; ribbon.rotation.y = .3; ribbon.userData.phase = i * 1.7; stageProps.add(ribbon); auroraRibbons.push(ribbon);
     }
   }
-  if (theme === 'night') {
+  if (theme === 'bay') {
+    // Open sea to the north-east with drifting ice floes and a rocky shore.
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(70, 30), new THREE.MeshStandardMaterial({ color: '#7fb4cc', roughness: .2, metalness: .15 })); sea.geometry.userData.own = true; sea.rotation.x = -Math.PI / 2; sea.position.set(30, .01, -36); stageProps.add(sea);
+    for (let i = 0; i < 12; i++) { const floe = new THREE.Mesh(new THREE.CylinderGeometry(1 + noise(i) * 1.6, 1.2 + noise(i) * 1.6, .3, 6), material('#f4fbff')); floe.geometry.userData.own = true; floe.position.set(8 + noise(i + 1) * 46, .12, -26 - noise(i + 2) * 18); floe.rotation.y = noise(i + 3) * 3; floe.userData.drift = noise(i + 4); stageProps.add(floe); floes.push(floe); }
+    for (let i = 0; i < 10; i++) ball(stageProps, '#8e9aa3', 4 + i * 4.5, .2, -21.5 + (noise(i + 50) - .5) * 2, .6 + noise(i) * .6, .35, .5 + noise(i + 1) * .5, true);
+  }
+  if (theme === 'peak') {
+    // Snow-capped peaks ring the far horizon; the tallest one is the king's throne.
+    for (let i = 0; i < 7; i++) { const h = 14 + noise(i + 60) * 10 + (i === 3 ? 10 : 0), x = -45 + i * 15; const rock = new THREE.Mesh(new THREE.ConeGeometry(8 + noise(i) * 3, h, 6), material('#a7b4be')); rock.geometry.userData.own = true; rock.position.set(x, h / 2, -58); stageProps.add(rock); const cap = new THREE.Mesh(new THREE.ConeGeometry((8 + noise(i) * 3) * .42, h * .42, 6), material('#f8fbfd')); cap.geometry.userData.own = true; cap.position.set(x, h * .79, -58); stageProps.add(cap); }
+  }
+  if (theme === 'night' || theme === 'polar') {
     // Torches at the fence corners and the gates: warm point lights that flicker.
     const c = maxCamp; const spots = [[c.minX - 1, c.minZ - 1], [c.maxX + 1, c.minZ - 1], [c.minX - 1, c.maxZ + 1], [c.maxX + 1, c.maxZ + 1]];
     spots.forEach(([x, z], i) => { box(stageProps, '#5a3f2a', x, 1.2, z, .18, 2.4, .18); box(stageProps, '#3b2a1c', x, 2.45, z, .5, .3, .5, false); const flame = new THREE.Mesh(new THREE.ConeGeometry(.28, .9, 6), new THREE.MeshBasicMaterial({ color: '#ffb347' })); flame.position.set(x, 3, z); stageProps.add(flame); const light = new THREE.PointLight('#ffa040', 1.6, 16, 1.6); light.position.set(x, 3.2, z); stageProps.add(light); torches.push({ flame, light, phase: i }); });
@@ -245,6 +255,7 @@ const towerRing = flatRing(towerPoint.x, towerPoint.z, '#f0c75a', 10, .08, 0);
 function refreshTower() { const lvl = s.upgrades.tower; if (lvl === shownTower) return; shownTower = lvl; if (towerView) scene.remove(towerView); towerView = null; if (lvl > 0) { towerView = createTower(lvl); towerView.position.set(towerPoint.x, 0, towerPoint.z); scene.add(towerView); } const st = towerStats(lvl); towerRing.visible = !!st; if (st) { towerRing.geometry.dispose(); towerRing.geometry = new THREE.RingGeometry(st.range - .1, st.range, 64); towerRing.material.opacity = .35; } }
 const helperLoad = Array.from({ length: assistantCapacity }, (_, i) => meatMesh(helper, i % 2 ? -.2 : .2, 1.05 + Math.floor(i / 2) * .19, -.62, .44, .17, .5));
 const helperLabel = label('', -6, 2.9, 7); helperLabel.el.innerHTML = '搬肉助手';
+let shownHelperLv = 0;
 
 // ---------- loot, transfers, effects, snow ----------
 const dropMesh = meatInstanced(config.dropLimit + 80);
@@ -265,7 +276,7 @@ snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
 const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: '#ffffff', size: .22, transparent: true, opacity: .75, depthWrite: false })); scene.add(snow);
 
 // ---------- music (synthesized: wind bed + slow pentatonic lullaby per stage theme) ----------
-const scales = { snow: [262, 294, 330, 392, 440], ice: [294, 349, 392, 440, 523], dusk: [247, 294, 330, 370, 440], aurora: [220, 262, 294, 330, 392], night: [196, 233, 262, 311, 349] };
+const scales = { bay: [277, 311, 370, 415, 466], peak: [294, 330, 370, 440, 494], polar: [175, 208, 233, 262, 311], snow: [262, 294, 330, 392, 440], ice: [294, 349, 392, 440, 523], dusk: [247, 294, 330, 370, 440], aurora: [220, 262, 294, 330, 392], night: [196, 233, 262, 311, 349] };
 let music = null, nextBeat = 0, beat = 0;
 function startMusic() {
   if (!audio || music) return;
@@ -475,7 +486,7 @@ function draw(t) {
       for (const e of events) {
         if (e.type === 'slash') { attackVisual = .2; attackAim = e.aim; buildSlash(e.range, e.angle); slashGroup.position.set(e.x, 0, e.z); slashGroup.rotation.y = e.aim - Math.PI / 2; sfx.slash(); }
         else if (e.type === 'hit') { spark(e.x, e.z, '#ffd54a', .35, .22); droplets(e.x, e.z); if (!e.actor) sfx.hit(); const g = preyAt(e.x, e.z, e.id); if (g) { const u = g.userData; u.hit = .4; const fx = e.from?.x ?? s.x, fz = e.from?.z ?? s.z; const d = Math.hypot(e.x - fx, e.z - fz) || 1; u.hitDir = { x: (e.x - fx) / d, z: (e.z - fz) / d }; } }
-        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); sfx.kill(); shake = Math.max(shake, e.kind === 'giant' ? .6 : .14); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
+        else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); sfx.kill(); shake = Math.max(shake, e.kind === 'king' ? 1 : e.kind === 'giant' ? .6 : e.kind === 'walrus' ? .3 : .14); if (e.kind === 'king') { toast('熊王倒下了！滿地都是肉'); buzz([40, 30, 60]); } for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
         else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); sfx.pickup(); endCoach('loot'); } }
         else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) { sfx.deposit(); endCoach('table'); } }
         else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) { sfx.coin(); endCoach('cash'); } }
@@ -487,7 +498,7 @@ function draw(t) {
         else if (e.type === 'tip') showCoach(e.id);
         else if (e.type === 'star') { burst(s.x, s.z, '#f0b23a'); for (let i = 0; i < 8; i++) spark(s.x + Math.cos(i * .8) * 1.1, s.z + Math.sin(i * .8) * 1.1, '#ffd54a', .32, .6, 3); sfx.star(); if (e.stars > 1 || !stageCleared(s) || s.earned > stageOf(s).goal) toast(`第 ${e.stars} 顆星！${e.label}`); save(); }
         else if (e.type === 'sale') { const from = { x: table.x + .8, z: e.lane ? table.z - 1.2 : table.z + .4 }; for (let k = 0; k < Math.min(3, e.count || 1); k++) transfer('meat', { x: from.x, z: from.z + k * .25 }, e.customer, 3 + k * .4); transfer('bill', e.customer, cashPoint, 2.4); }
-        else if (e.type === 'built') { burst(e.x, e.z); buzz(18); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : e.id === 'window' ? (s.upgrades.window === 1 ? '第二個窗口開張！兩排客人同時買肉' : `窗口 Lv.${s.upgrades.window}：每位客人一次買 ${s.upgrades.window} 份`) : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
+        else if (e.type === 'built') { burst(e.x, e.z); buzz(18); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'helper' ? (level(s, 'helper') === 1 ? '助手上工了，會自動把地上的肉搬回桌上' : `助手 Lv.${level(s, 'helper')}：背得更多、走得更快`) : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : e.id === 'window' ? (s.upgrades.window === 1 ? '第二個窗口開張！兩排客人同時買肉' : `窗口 Lv.${s.upgrades.window}：每位客人一次買 ${s.upgrades.window} 份`) : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
         else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); sfx.hurt(); buzz(12); shake = Math.max(shake, .1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
         else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); sfx.fanfare(); buzz([30, 40, 30]); save(); setTimeout(() => showStory('clear'), 900); }
@@ -532,6 +543,7 @@ function draw(t) {
   camera.position.copy(follow).add(cameraOffset); camera.lookAt(follow); if (reduceMotion) shake = 0; if (shake > 0) { shake = Math.max(0, shake - dt * 1.8); camera.position.x += (Math.random() - .5) * shake * .9; camera.position.y += (Math.random() - .5) * shake * .6; }
   sun.position.set(follow.x - 18, 32, follow.z + 14); sun.target.position.copy(follow);
   for (const r of auroraRibbons) { const pos = r.geometry.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, Math.sin(visualTime * .9 + pos.getX(i) * .18 + r.userData.phase) * 1.6 + (i % 2 ? 3.5 : -3.5)); pos.needsUpdate = true; }
+  for (const f of floes) { f.position.y = .12 + Math.sin(visualTime * 1.3 + f.userData.drift * 6) * .05; f.rotation.y += dt * .03 * (f.userData.drift - .5); }
   for (const tch of torches) { const f = .85 + Math.sin(visualTime * 11 + tch.phase * 2) * .18 + Math.sin(visualTime * 23 + tch.phase) * .08; tch.flame.scale.set(f, f * 1.1, f); tch.light.intensity = 1.3 + f * .5; }
   snow.position.set(follow.x, 0, follow.z); const sp = snowGeo.attributes.position; for (let i = 0; i < snowCount; i++) { let y = sp.array[i * 3 + 1] - dt * 2.2; if (y < 0) y += 24; sp.array[i * 3 + 1] = y; sp.array[i * 3] += Math.sin(visualTime + i) * dt * .3; } sp.needsUpdate = true;
 
@@ -549,7 +561,7 @@ function draw(t) {
     g.position.y = alive ? Math.abs(Math.sin(visualTime * 6 + i)) * .04 : 0;
     const maxHp = preyOf(s, b).hp; const bar = u.bar; bar.group.visible = alive && b.hp < maxHp; bar.fill.scale.x = 1.4 * Math.max(0, b.hp) / maxHp; bar.fill.position.x = -(1.4 - bar.fill.scale.x) / 2; bar.group.rotation.y = -g.rotation.y + Math.PI / 4;
     u.hp = b.hp;
-    const base = u.kind === 'giant' ? 1.6 : u.kind === 'wolf' ? .72 : 1; g.scale.setScalar(base);
+    g.scale.setScalar(preyScale(u.kind));
     animatePrey(g, window.__polar?.slow ? dt * .12 : dt, visualTime, before.distanceTo(g.position) > .003);
   });
 
@@ -595,7 +607,7 @@ function draw(t) {
   for (const g of buildingViews.values()) { const u = g.userData; if (u.rise > 0) { u.rise = Math.max(0, u.rise - dt); const k = 1 - u.rise / .9; const sc = k < .7 ? k / .7 * 1.15 : 1.15 - (k - .7) / .3 * .15; g.scale.setScalar(Math.max(.01, sc)); g.position.y = Math.sin(k * Math.PI) * .3; } if (u.fire) { u.fire.scale.y = .8 + Math.sin(visualTime * 9) * .3; u.fire.scale.x = u.fire.scale.z = .9 + Math.sin(visualTime * 7) * .15; } }
   cashier.visible = s.cashier; cashier.rotation.y = Math.PI * .75 + Math.sin(visualTime * 2) * .1;
   hunterViews.forEach((g, i) => { const h = s.hunters[i]; g.visible = !!h; if (!h) return; const dx = h.x - g.position.x, dz = h.z - g.position.z; if (Math.hypot(dx, dz) > .01) g.rotation.y = Math.atan2(dx, dz); g.position.set(h.x, 0, h.z); animateHuman(g, visualTime, dt); });
-  helper.visible = s.helper; helperLabel.el.hidden = !s.helper;
+  helper.visible = s.helper; helperLabel.el.hidden = !s.helper; { const hl = level(s, 'helper'); if (hl !== shownHelperLv) { shownHelperLv = hl; helperLabel.el.innerHTML = hl > 1 ? `搬肉助手 Lv.${hl}` : '搬肉助手'; helper.scale.setScalar(1 + (hl - 1) * .08); } }
   if (s.helper) { const dx = s.assistant.x - helper.position.x, dz = s.assistant.z - helper.position.z; if (Math.hypot(dx, dz) > .001) helper.rotation.y = Math.atan2(dx, dz); helper.position.set(s.assistant.x, 0, s.assistant.z); helperLoad.forEach((m, i) => m.visible = i < s.assistant.load); helperLabel.p.set(s.assistant.x, 3, s.assistant.z); helperLabel.el.innerHTML = `搬肉助手 · ${s.assistant.load}/${assistantCapacity}`; }
 
   // transfers and effects

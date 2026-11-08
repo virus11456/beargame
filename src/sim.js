@@ -45,7 +45,7 @@ export function fresh(stage = 0, unlocked = 0) {
   return {
     version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {}, storySeen: false, stars: 0, tips: { loot: false, table: false, cash: false, pad: false },
     x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
-    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0, window: 0 }, helper: false, cashier: false, hunters: [], buildings: [],
+    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0, window: 0, helper: 0 }, helper: false, cashier: false, hunters: [], buildings: [],
     paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0, tower: 0, cashier: 0, hunter: 0, window: 0 }, padLatch: null,
     attack: 0, towerTimer: 0, transfer: 0, serve: 0, serve2: 0, cashTimer: 0, payTimer: 0, time: 0,
     customers: newCustomers(0), customers2: newCustomers(1), assistant: newAssistant(),
@@ -240,14 +240,14 @@ export function parseSave(text) {
     for (const k of ['coins', 'earned', 'kills', 'sold']) if (count(v[k])) s[k] = v[k];
     if (count(v.pendingCash)) s.coins += v.pendingCash;
     for (const k of ['weapon', 'bag', 'speed']) if (count(v.upgrades?.[k])) s.upgrades[k] = Math.min(maxLevel(k), v.upgrades[k]);
-    if (v.helper === true) s.helper = true;
+    if (v.helper === true) { s.helper = true; s.upgrades.helper = 1; }
     return s;
   }
   if (v.version === 6) { v.version = 7; v.stage = 0; v.unlocked = 0; v.cleared = false; v.lifetime = 0; }
   if (v.version !== 7) throw Error('version');
   if (!count(v.stage, stages.length - 1) || !count(v.unlocked, stages.length - 1) || typeof v.cleared !== 'boolean' || !count(v.lifetime)) throw Error('stage');
   const stage = stages[v.stage];
-  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false; v.stars ??= 0; v.customers2 ??= newCustomers(1); v.serve2 ??= 0; v.tips = { ...s.tips, ...(v.tips || {}) };
+  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false; v.stars ??= 0; v.customers2 ??= newCustomers(1); v.serve2 ??= 0; if (v.helper === true && !v.upgrades.helper) v.upgrades.helper = 1; if (v.upgrades.helper > 0) v.helper = true; v.tips = { ...s.tips, ...(v.tips || {}) };
   if (!Array.isArray(v.buildings)) { v.buildings = []; for (const [k, b] of Object.entries(buildingOf)) if ((k === 'helper' ? v.helper : k === 'cashier' ? v.cashier : v.upgrades[k] > 0) && v.buildings.length < buildingSlots.length) v.buildings.push(b); }
   if (v.buildings.length > buildingSlots.length || new Set(v.buildings).size !== v.buildings.length || v.buildings.some(b => !buildingNames[b])) throw Error('buildings');
   if (typeof v.storySeen !== 'boolean' || !count(v.stars, 3) || Object.keys(s.tips).some(k => typeof v.tips[k] !== 'boolean')) throw Error('story');

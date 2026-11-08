@@ -47,7 +47,10 @@ const preyLooks = {
   bear: { fur: '#f6f3ea', belly: '#e6e3d8', head: '#fbf9f2', snout: '#ebe8de', leg: '#ece9df', ear: '#fbf9f2', scale: 1 },
   wolf: { fur: '#b4bcc4', belly: '#d9dee3', head: '#bcc4cb', snout: '#e3e7ea', leg: '#9ea8b1', ear: '#8e979f', scale: .72 },
   giant: { fur: '#e3edf2', belly: '#cbdae2', head: '#edf4f7', snout: '#d6e3ea', leg: '#d3e0e7', ear: '#edf4f7', scale: 1.6 },
+  walrus: { fur: '#9a7563', belly: '#b89480', head: '#a37e6b', snout: '#c9a690', leg: '#7f604f', ear: '#8a6a58', scale: 1.2 },
+  king: { fur: '#f2f6fa', belly: '#dde8ef', head: '#f8fbfd', snout: '#e4edf2', leg: '#dfe9ef', ear: '#f8fbfd', scale: 2.1 },
 };
+export const preyScale = kind => (preyLooks[kind] || preyLooks.bear).scale;
 export function createBear(kind = 'bear') {
   const look = preyLooks[kind] || preyLooks.bear;
   const g = new THREE.Group(), inner = new THREE.Group(); g.add(inner);
@@ -56,18 +59,31 @@ export function createBear(kind = 'bear') {
   const torso = [tinted(smooth, look.fur, M(0, .85, 0, .85, .62, 1.2)), tinted(smooth, look.belly, M(0, .62, -.05, .75, .4, 1.05))];
   if (kind === 'giant') torso.push(tinted(smooth, '#c9d8e0', M(-.3, 1.45, .2, .5, .25, .7)), tinted(smooth, '#c9d8e0', M(.35, 1.4, -.3, .45, .22, .6)));
   if (kind === 'wolf') torso.push(tinted(smooth, look.fur, M(0, 1, -1.35, .16, .16, .7)));
+  // Walrus: a heavier, lower body with flippers instead of a tail.
+  if (kind === 'walrus') torso.push(tinted(smooth, look.fur, M(0, .7, -.2, .95, .55, 1.25)), tinted(smooth, look.leg, M(0, .25, -1.2, .55, .12, .35)));
+  // Bear King: a blue royal cape over the back.
+  if (kind === 'king') torso.push(tinted(smooth, '#3d5f9e', M(0, 1.05, -.25, .9, .5, 1.05)), tinted(smooth, '#f0c75a', M(0, 1.38, .55, .55, .1, .22)));
   const body = new THREE.Mesh(mergeGeometries(torso, false), flashMat()); body.castShadow = true; body.receiveShadow = true; inner.add(body);
-  const earW = kind === 'wolf' ? .11 : .13, earH = kind === 'wolf' ? .24 : .15;
+  const earW = kind === 'wolf' ? .11 : .13, earH = kind === 'wolf' ? .24 : kind === 'walrus' ? .05 : .15;
   const headParts = [tinted(smooth, look.head, M(0, 0, 0, .52, .45, .5)), tinted(smooth, look.snout, M(0, -.12, .45, .3, .21, .25)), tinted(smooth, '#2b3238', M(0, -.08, .67, .1, .08, .07))];
   for (const x of [-.34, .34]) headParts.push(tinted(smooth, look.ear, M(x, .38, -.17, earW, earH, .11)), tinted(smooth, '#24303a', M(x * .72, .16, .37, .035, .04, .025)));
-  const head = new THREE.Group(); head.position.set(0, 1.3, 1.05); inner.add(head);
+  // Walrus tusks and whisker pad; they flash red with the rest of the head.
+  if (kind === 'walrus') { headParts.push(tinted(smooth, '#d8b49a', M(0, -.16, .5, .38, .2, .22))); for (const x of [-.13, .13]) headParts.push(tinted(smooth, '#fbf6ea', M(x, -.48, .55, .05, .28, .05))); }
+  const head = new THREE.Group(); head.position.set(0, kind === 'walrus' ? 1.05 : 1.3, 1.05); inner.add(head);
   const headMesh = new THREE.Mesh(mergeGeometries(headParts, false), flashMat()); head.add(headMesh);
+  // The king's ice crown: a gold band with five spikes and a blue gem.
+  if (kind === 'king') {
+    const crown = new THREE.Group(); crown.position.set(0, .42, -.02); head.add(crown);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(.3, .32, .16, 10), material('#f0c75a', { metalness: .3, roughness: .4 })); crown.add(band);
+    for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2, spike = new THREE.Mesh(new THREE.ConeGeometry(.07, .26, 5), material('#f6d77a', { metalness: .3, roughness: .4 })); spike.position.set(Math.cos(a) * .27, .2, Math.sin(a) * .27); crown.add(spike); }
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(.08), material('#7fd3ff', { emissive: new THREE.Color('#2a8fd0'), emissiveIntensity: .6 })); gem.position.set(0, .02, .3); crown.add(gem);
+  }
   const legs = [];
   for (const x of [-.52, .52]) for (const z of [-.75, .7]) legs.push(part(inner, look.leg, x, .38, z, .48, .72, .52, rounded, false));
   g.scale.setScalar(look.scale);
   const bar = new THREE.Group(); bar.position.y = 2.25; g.add(bar);
   const back = part(bar, '#2a2a2a', 0, 0, 0, 1.4, .1, .12, unit, false);
-  const fill = part(bar, kind === 'giant' ? '#ff8c3a' : '#ff4d4d', 0, .01, .02, 1.4, .12, .12, unit, false);
+  const fill = part(bar, kind === 'king' ? '#f0c75a' : kind === 'giant' || kind === 'walrus' ? '#ff8c3a' : '#ff4d4d', 0, .01, .02, 1.4, .12, .12, unit, false);
   bar.scale.setScalar(1 / look.scale);
   g.userData = { bar: { group: bar, back, fill }, body, inner, head, legs, mats: [body.material, headMesh.material], kind, hit: 0, dying: 0, spawn: 0, lunge: 0, hitDir: { x: 0, z: 1 }, hp: 0 };
   return g;

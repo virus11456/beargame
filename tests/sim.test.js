@@ -73,7 +73,7 @@ test('upgrades change capacity, speed, herd size and world bounds', () => {
   assert.equal(buy(s, 'herd'), true); assert.equal(herdSize(s), 24 + config.herdPerLevel); assert.ok(worldBounds(s).minZ < worldBounds(fresh()).minZ);
   const slow = fresh(), fast = fresh(); fast.upgrades.speed = 2; slow.x = fast.x = 0; slow.z = fast.z = -12;
   step(slow, 1, { x: 1, z: 0 }); step(fast, 1, { x: 1, z: 0 }); assert.ok(fast.x > slow.x);
-  assert.equal(buy(s, 'helper'), false, 'helper needs sales'); s.sold = 30; assert.equal(buy(s, 'helper'), true); assert.equal(buy(s, 'helper'), false);
+  assert.equal(buy(s, 'helper'), false, 'helper needs sales'); s.sold = 30; assert.equal(buy(s, 'helper'), true); assert.equal(buy(s, 'helper'), true); assert.equal(buy(s, 'helper'), true); assert.equal(buy(s, 'helper'), false); assert.equal(s.upgrades.helper, 3);
   assert.ok(weaponStats(3).range > weaponStats(0).range); assert.ok(weaponStats(3).damage > weaponStats(0).damage);
 });
 
@@ -90,7 +90,7 @@ test('corrupt saves fall back to a fresh camp and version five camps keep their 
   const old = { version: 5, coins: 100, pendingCash: 40, earned: 900, kills: 12, sold: 70, upgrades: { weapon: 3, bag: 9, speed: 1 }, helper: true, queues: {}, bears: [] };
   const s = parseSave(JSON.stringify(old));
   assert.equal(s.version, 7); assert.equal(s.coins, 140); assert.equal(s.earned, 900); assert.equal(s.sold, 70);
-  assert.deepEqual(s.upgrades, { weapon: 3, bag: 7, speed: 1, herd: 0, tower: 0, hunter: 0, window: 0 }); assert.equal(s.helper, true); assert.equal(s.meat, 0); assert.equal(s.version, 7);
+  assert.deepEqual(s.upgrades, { weapon: 3, bag: 7, speed: 1, herd: 0, tower: 0, hunter: 0, window: 0, helper: 1 }); assert.equal(s.helper, true); assert.equal(s.meat, 0); assert.equal(s.version, 7);
 });
 
 test('a bear that the player walks away from stops chasing and roams near home', () => {

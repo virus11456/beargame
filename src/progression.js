@@ -8,14 +8,14 @@ export const pads = [
   { id: 'bag', name: '上限', icon: 'stack', x: -2, z: -3, prices: [10, 60, 150, 300, 600, 1000, 1600], detail: '每級多背 20 份肉；蓋肉倉後桌上可放 400 份' },
   { id: 'speed', name: '速度', icon: 'speed', x: -6, z: 1.5, prices: [100, 250, 500, 900, 1500], detail: '移動速度 +15%' },
   { id: 'herd', name: '獵場', icon: 'bear', x: -2, z: 1.5, prices: [320, 700, 1500, 2600, 4000], detail: '更多北極熊，更大的獵場' },
-  { id: 'helper', name: '助手', icon: 'helper', x: -6, z: 5, prices: [425], detail: '自動撿肉送到桌上', requires: '售出 30 份' },
+  { id: 'helper', name: '助手', icon: 'helper', x: -6, z: 5, prices: [425, 900, 1800], detail: '自動撿肉送到桌上', details: ['自動撿肉送到桌上（一次 15 份）', '助手一次背 25 份、走得更快', '助手一次背 40 份、跑得最快'], requires: '售出 30 份' },
   { id: 'tower', name: '箭塔', icon: 'tower', x: 2, z: -3, prices: [150, 400, 900, 1600, 2800], detail: '門外的箭塔自動射擊獵物' },
   { id: 'cashier', name: '收銀員', icon: 'cashier', x: 2, z: 1.5, prices: [350], detail: '自動把桌邊的錢收進錢包', requires: '售出 60 份' },
   { id: 'hunter', name: '獵人', icon: 'hunter', x: 7, z: -3.5, prices: [600, 1200, 2400, 4000], detail: '每級多一位獵人出門狩獵', requires: '箭塔 Lv.1' },
   { id: 'window', name: '窗口', icon: 'window', x: -2, z: 5, prices: [300, 700, 1600], detail: '販售窗口升級', details: ['開第二個販售窗口，兩排客人同時買', '每位客人一次買 2 份', '每位客人一次買 3 份'] },
 ];
 export const padRadius = 1.35;
-export const level = (s, key) => key === 'helper' ? (s.helper ? 1 : 0) : key === 'cashier' ? (s.cashier ? 1 : 0) : s.upgrades[key];
+export const level = (s, key) => key === 'helper' ? (s.helper ? Math.max(1, s.upgrades.helper || 0) : 0) : key === 'cashier' ? (s.cashier ? 1 : 0) : s.upgrades[key];
 export const maxLevel = key => pads.find(p => p.id === key).prices.length;
 export function price(s, key) {
   const pad = pads.find(p => p.id === key);
@@ -36,7 +36,7 @@ export const automation = s => ({ helper: s.helper, tower: s.upgrades.tower > 0,
 export const fullyAutomated = s => Object.values(automation(s)).every(Boolean);
 // Stage stars, earned in order: the income goal, twice the goal, then a
 // fully automated camp. The endless stage uses fixed income marks instead.
-export const starGoals = stage => stage.goal === null ? [20000, 40000] : [stage.goal, stage.goal * 2];
+export const starGoals = stage => stage.goal === null ? stage.stars || [20000, 40000] : [stage.goal, stage.goal * 2];
 export const starLabels = stage => { const [a, b] = starGoals(stage); return [`收入 ${a} 元`, `收入 ${b} 元`, '營地全自動運轉']; };
 export function starsOf(s, stage = stageOf(s)) {
   const [a, b] = starGoals(stage);
@@ -48,7 +48,7 @@ export const buildingOf = { weapon: 'forge', bag: 'storage', speed: 'sled', help
 export const buildingNames = { forge: '鍛造台', storage: '肉倉', sled: '雪橇棚', hut: '搬運小屋', booth: '收銀亭', lodge: '獵人小屋' };
 export const campOf = s => expandedCamp(s.buildings.length);
 export function apply(s, key, events) {
-  if (key === 'helper') s.helper = true;
+  if (key === 'helper') { s.upgrades.helper = level(s, 'helper') + 1; s.helper = true; }
   else if (key === 'cashier') s.cashier = true;
   else s.upgrades[key]++;
   if (key === 'hunter') s.hunters.push(newHunter(s.hunters.length));
@@ -99,7 +99,9 @@ export function weaponStats(lvl) {
 }
 
 export const newAssistant = () => ({ x: -6, z: 5.5, load: 0, phase: 'idle', timer: 0 });
-export const assistantCapacity = 15;
+// Helper levels: hiring gives a 15-piece carrier; Lv.2 and Lv.3 carry more and walk faster.
+export const helperStats = lvl => ({ capacity: [15, 15, 25, 40][lvl] ?? 40, speed: [5, 5, 6, 7.2][lvl] ?? 7.2 });
+export const assistantCapacity = 40;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 function move(worker, goal, dt, speed, c) {
   const target = routeTarget(worker, goal, c);
@@ -113,7 +115,7 @@ function move(worker, goal, dt, speed, c) {
 // The helper walks to the nearest meat, fills up, and unloads at the table.
 export function updateAssistant(s, dt, table, stockLimit, events) {
   if (!s.helper) return;
-  const a = s.assistant, c = campOf(s);
+  const a = s.assistant, c = campOf(s), { capacity: carry, speed } = helperStats(level(s, 'helper'));
   a.timer = Math.max(0, a.timer - dt);
   // Watchdog: if the helper makes no progress for a while, skip that piece for a bit.
   const moved = a.lastX === undefined ? 1 : Math.hypot(a.x - a.lastX, a.z - a.lastZ);
@@ -125,18 +127,18 @@ export function updateAssistant(s, dt, table, stockLimit, events) {
   if (a.stuck > 3 && a.stuck <= 6 && a.phase === 'return') { const g = gatesOf(c).sort((p, q) => dist(a, p) - dist(a, q))[0]; a.x = g.x; a.z = g.z + (g.z < 0 ? -1 : 1); a.stuck = 3.01 + .001; }
   // Still stuck after the gate retreat: jump straight beside the goal so meat never sits on the helper's back forever.
   if (a.stuck > 6) { if (a.phase === 'return' || a.load > 0) { a.x = table.x - 1.4; a.z = table.z; a.phase = 'return'; } else if (loot) { a.x = loot.x + .3; a.z = loot.z; } a.stuck = 0; }
-  if (a.load >= assistantCapacity || a.phase === 'return' || (!loot && a.load > 0)) {
+  if (a.load >= carry || a.phase === 'return' || (!loot && a.load > 0)) {
     a.phase = 'return';
-    if (move(a, table, dt, 5, c) && a.timer === 0 && s.stock < stockLimit && a.load > 0) {
+    if (move(a, table, dt, speed, c) && a.timer === 0 && s.stock < stockLimit && a.load > 0) {
       a.load--; s.stock++; a.timer = .06;
       events.push({ type: 'deposit', actor: 'assistant', from: { x: a.x, z: a.z }, to: { x: table.x, z: table.z } });
     }
     if (a.load === 0) a.phase = 'idle';
   } else if (loot) {
     a.phase = 'collect';
-    if (move(a, loot, dt, 5, c) && a.timer === 0) {
+    if (move(a, loot, dt, speed, c) && a.timer === 0) {
       const i = s.drops.indexOf(loot);
       if (i >= 0) { s.drops.splice(i, 1); a.load++; a.timer = .05; events.push({ type: 'pickup', actor: 'assistant', from: { x: loot.x, z: loot.z }, to: { x: a.x, z: a.z } }); }
     }
-  } else { a.phase = 'idle'; move(a, { x: -6, z: 5.5 }, dt, 5, c); }
+  } else { a.phase = 'idle'; move(a, { x: -6, z: 5.5 }, dt, speed, c); }
 }
