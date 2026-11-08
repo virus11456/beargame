@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fresh, step, buy, serialize, parseSave, stages, stories, kindOf, prey, herdSize, nextStage, hasNext, stageOf, meatPrice, price, level } from '../src/sim.js';
-import { helperStats, updateAssistant } from '../src/progression.js';
+import { helperStats, updateAssistant, weaponStats } from '../src/progression.js';
 import { themes, kindOrder } from '../src/stages.js';
 const run = (s, seconds) => { const ev = []; for (let i = 0; i < seconds * 30; i++) ev.push(...step(s, 1 / 30)); return ev; };
 
@@ -38,4 +38,14 @@ test('helper levels carry more and walk faster; old hired helpers load as Lv.1',
   for (let i = 0; i < 120; i++) updateAssistant(s, 1 / 30, { x: 7.2, z: 3.6 }, 240, []);
   assert.ok(s.assistant.load > 15, `Lv.3 helper carries ${s.assistant.load}`);
   const old = JSON.parse(serialize(fresh())); old.helper = true; delete old.upgrades.helper; const back = parseSave(JSON.stringify(old)); assert.equal(back.upgrades.helper, 1); assert.equal(level(back, 'helper'), 1);
+});
+
+test('weapon goes to Lv.7 with rising stats; the Bear King announces its return', () => {
+  const s = fresh(); s.coins = 1e6; while (price(s, 'weapon') !== null) buy(s, 'weapon');
+  assert.equal(s.upgrades.weapon, 7); assert.equal(weaponStats(7).name, '極夜神劍'); assert.equal(weaponStats(6).name, '冰龍劍');
+  assert.ok(weaponStats(7).damage > weaponStats(5).damage && weaponStats(7).range > weaponStats(5).range);
+  assert.equal(parseSave(serialize(s)).upgrades.weapon, 7);
+  const p = fresh(6); const king = p.bears[0]; king.hp = 0; king.respawn = .05; p.x = 40; p.z = 40;
+  const ev = run(p, .5); const boss = ev.filter(e => e.type === 'boss'); assert.equal(boss.length, 1); assert.equal(boss[0].id, 0); assert.equal(p.bears[0].hp, prey.king.hp);
+  const q = fresh(0); q.bears[0].hp = 0; q.bears[0].respawn = .05; q.x = 40; q.z = 40; assert.equal(run(q, .5).filter(e => e.type === 'boss').length, 0, 'only kings announce themselves');
 });

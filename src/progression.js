@@ -4,7 +4,7 @@ import { stageOf, baseHerd, maxPrey } from './stages.js';
 // exactly like the reference playable: the price counts down and the upgrade
 // applies when it reaches zero. Partial payments stay on the pad.
 export const pads = [
-  { id: 'weapon', name: '武器', icon: 'sword', x: -6, z: -3, prices: [45, 100, 200, 400, 800], detail: '更寬的揮砍與更高傷害' },
+  { id: 'weapon', name: '武器', icon: 'sword', x: -6, z: -3, prices: [45, 100, 200, 400, 800, 1600, 3200], detail: '更寬的揮砍與更高傷害' },
   { id: 'bag', name: '上限', icon: 'stack', x: -2, z: -3, prices: [10, 60, 150, 300, 600, 1000, 1600], detail: '每級多背 20 份肉；蓋肉倉後桌上可放 400 份' },
   { id: 'speed', name: '速度', icon: 'speed', x: -6, z: 1.5, prices: [100, 250, 500, 900, 1500], detail: '移動速度 +15%' },
   { id: 'herd', name: '獵場', icon: 'bear', x: -2, z: 1.5, prices: [320, 700, 1500, 2600, 4000], detail: '更多北極熊，更大的獵場' },
@@ -90,7 +90,7 @@ export function towerStats(lvl) {
 }
 export function weaponStats(lvl) {
   return {
-    name: ['獵刀', '鐵劍', '寬刃劍', '大劍', '霜刃', '極光劍'][lvl] || '極光劍',
+    name: ['獵刀', '鐵劍', '寬刃劍', '大劍', '霜刃', '極光劍', '冰龍劍', '極夜神劍'][lvl] || '極夜神劍',
     damage: 12 + lvl * 7,
     range: 2.7 + lvl * .35,
     angle: Math.min(3, 2.1 + lvl * .16),

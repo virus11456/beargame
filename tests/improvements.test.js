@@ -18,14 +18,14 @@ test('guide follows the real loop: hunt → loot → table → cash → pad → 
 
 test('guide prioritizes recovery and never points at the locked helper', () => {
   const s = fresh(); s.z = -12; s.hp = 20; assert.equal(nextAction(s).id, 'heal');
-  s.hp = 100; s.coins = 5000; s.upgrades = { weapon: 5, bag: 7, speed: 5, herd: 5 }; assert.equal(nextAction(s).id, 'hunt');
+  s.hp = 100; s.coins = 5000; s.upgrades = { weapon: 7, bag: 7, speed: 5, herd: 5 }; assert.equal(nextAction(s).id, 'hunt');
   s.sold = 30; assert.equal(nextAction(s).pad, 'helper');
 });
 
 test('pad labels show remaining price, lock state and max level', () => {
   const s = fresh(); const weapon = pads.find(p => p.id === 'weapon'), helper = pads.find(p => p.id === 'helper');
   assert.equal(padLabel(s, weapon).remaining, 45); s.paid.weapon = 20; assert.equal(padLabel(s, weapon).remaining, 25);
-  assert.equal(padLabel(s, helper).locked, true); s.upgrades.weapon = 5; assert.equal(padLabel(s, weapon).done, true);
+  assert.equal(padLabel(s, helper).locked, true); s.upgrades.weapon = 7; assert.equal(padLabel(s, weapon).done, true);
 });
 
 test('backup restores last valid state when primary save is damaged', () => {

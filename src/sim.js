@@ -127,7 +127,7 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
   for (const b of active) {
     if (b.hp <= 0) {
       b.respawn -= dt;
-      if (b.respawn <= 0 && s.drops.length < config.dropLimit) Object.assign(b, bear(b.id, stageOf(s)), { cool: 1.2 });
+      if (b.respawn <= 0 && s.drops.length < config.dropLimit) { Object.assign(b, bear(b.id, stageOf(s)), { cool: 1.2 }); if (kindOf(stageOf(s), b.id) === 'king') events.push({ type: 'boss', id: b.id, x: b.x, z: b.z }); }
       continue;
     }
     const kind = preyOf(s, b);

@@ -152,6 +152,8 @@ const weaponLooks = [
   { blade: '#8b98a3', edge: '#dfe8ee', guard: '#d4b04a', grip: '#2c2320', len: 2.1, wide: .22, thick: .07 },
   { blade: '#a9e4ff', edge: '#ffffff', guard: '#5aa9d8', grip: '#24405a', len: 1.9, wide: .18, thick: .06, glow: '#7fd0ff' },
   { blade: '#8de3c4', edge: '#d7b5ff', guard: '#f0c75a', grip: '#2a1f3a', len: 2.3, wide: .24, thick: .07, glow: '#a37bff' },
+  { blade: '#dff6ff', edge: '#7fe8ff', guard: '#3b8fb8', grip: '#1d3346', len: 2.45, wide: .26, thick: .07, glow: '#5fe0ff' },
+  { blade: '#2c3150', edge: '#ffd76a', guard: '#f0c75a', grip: '#151a2a', len: 2.65, wide: .28, thick: .08, glow: '#ffbf3a' },
 ];
 export function createWeapon(level = 0) {
   const w = weaponLooks[Math.max(0, Math.min(weaponLooks.length - 1, level))];
@@ -167,9 +169,19 @@ export function createWeapon(level = 0) {
   part(g, w.grip, 0, 0, -.05, .09, .09, level >= 3 ? .55 : .42);
   part(g, w.guard, 0, 0, level >= 3 ? -.36 : -.3, .13, .13, .12, smooth, false);
   if (level === 5) { const halo = new THREE.Mesh(new THREE.TorusGeometry(.2, .03, 8, 24), new THREE.MeshBasicMaterial({ color: '#c9a5ff', transparent: true, opacity: .8 })); halo.position.z = .22; g.add(halo); }
+  // Ice Dragon Blade: crystal spines along both edges and a fanged guard.
+  if (level === 6) {
+    for (let i = 0; i < 4; i++) for (const k of [-1, 1]) { const spine = new THREE.Mesh(new THREE.ConeGeometry(.05, .22, 4), bladeMat); spine.position.set(k * (w.wide * .55 + .05), 0, .55 + i * .45); spine.rotation.z = -k * Math.PI / 2; spine.rotation.x = .5; g.add(spine); }
+    for (const k of [-1, 1]) { const fang = new THREE.Mesh(new THREE.ConeGeometry(.05, .2, 5), material('#eaf8ff')); fang.position.set(k * .22, 0, .38); fang.rotation.x = Math.PI / 2; g.add(fang); }
+  }
+  // Polar Night Blade: a dark blade with a gold edge, twin gold rings and a star pommel.
+  if (level === 7) {
+    for (const z of [.22, .34]) { const ring = new THREE.Mesh(new THREE.TorusGeometry(z === .22 ? .22 : .17, .03, 8, 24), new THREE.MeshBasicMaterial({ color: '#ffd76a', transparent: true, opacity: .85 })); ring.position.z = z; g.add(ring); }
+    const star = new THREE.Mesh(new THREE.OctahedronGeometry(.11), new THREE.MeshBasicMaterial({ color: '#fff1b0' })); star.position.z = -.46; g.add(star);
+  }
   g.userData.look = w; return g;
 }
-export const slashColors = [['#ff4fd0', '#ffd0f4'], ['#ff4fd0', '#ffd0f4'], ['#ff6a3d', '#ffe0b0'], ['#ff6a3d', '#ffe0b0'], ['#5fc8ff', '#e3f6ff'], ['#9d6bff', '#c8f7e6']];
+export const slashColors = [['#ff4fd0', '#ffd0f4'], ['#ff4fd0', '#ffd0f4'], ['#ff6a3d', '#ffe0b0'], ['#ff6a3d', '#ffe0b0'], ['#5fc8ff', '#e3f6ff'], ['#9d6bff', '#c8f7e6'], ['#3fe0ff', '#e0fbff'], ['#ffb52e', '#fff1c2']];
 
 // Arrow tower outside the gate: a timber frame, a platform and a crossbow
 // that grows a storey per level.

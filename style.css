@@ -17,6 +17,7 @@ header{position:absolute;top:var(--top);left:var(--left);right:var(--right);disp
 #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .label{position:absolute;transform:translate(-50%,-100%);background:#fffdf6ee;border:1px solid #fff;border-radius:10px;padding:5px 10px;text-align:center;font-size:11px;font-weight:800;white-space:nowrap;box-shadow:0 3px 0 #4b66701f;color:#35505a}
 .label small{display:block;font-size:9px;font-weight:600;color:#7a8d94;margin-top:1px}
+.boss-tag{background:#f0c75a;color:#4a3410;border-color:#ffe7a3;font-size:12px;letter-spacing:2px;box-shadow:0 3px 0 #b2781e66}
 .float{position:absolute;transform:translate(-50%,-100%);font-size:16px;font-weight:900;white-space:nowrap;pointer-events:none;text-shadow:0 2px 0 #fff,0 0 6px #fff,0 0 2px #fff;z-index:1}.float.sale{color:#d08a14}.float.collect{color:#2f9e44;font-size:18px}
 @media(max-width:600px){.float{font-size:13px}.float.collect{font-size:15px}}
 .pad-label{background:#6d5a48f0;color:#fff;border:2px solid #d9c196;border-radius:12px;padding:4px 8px;min-width:54px;line-height:1.1;touch-action:manipulation}

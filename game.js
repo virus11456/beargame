@@ -169,7 +169,7 @@ function refreshWeapon() { const lvl = s.upgrades.weapon; if (lvl === shownWeapo
 const packMeat = meatInstanced(420, player); const packCash = instanced(unit, '#5fd45a', 64, player);
 const hpBar = new THREE.Group(); hpBar.position.y = 2.75; player.add(hpBar);
 const hpBack = box(hpBar, '#2a2a2a', 0, 0, 0, 1.2, .1, .1, false); const hpFill = box(hpBar, '#5fe05a', 0, .01, .02, 1.2, .12, .1, false);
-let attackVisual = 0, attackAim = 0, visualTime = 0, shake = 0, currentAction = null;
+let attackVisual = 0, attackAim = 0, visualTime = 0, shake = 0, currentAction = null, bossAlert = 0;
 const guideArrow = new THREE.Mesh(new THREE.ConeGeometry(.32, .8, 3), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: .85, depthWrite: false })); guideArrow.rotation.x = Math.PI / 2; const guideGroup = new THREE.Group(); guideGroup.add(guideArrow); guideArrow.position.z = 1.9; guideArrow.position.y = .12; scene.add(guideGroup);
 const starRow = (n, cls = '') => `<i class="stars ${cls}">${[0, 1, 2].map(i => icon('star', 'ic star' + (i < n ? ' on' : ''))).join('')}</i>`;
 const stageStars = id => id === s.stage ? Math.max(s.stars, starsOf(s)) : s.records[id]?.stars || 0;
@@ -268,6 +268,7 @@ let towerView = null, shownTower = -1;
 const towerRing = flatRing(towerPoint.x, towerPoint.z, '#f0c75a', 10, .08, 0);
 function refreshTower() { const lvl = s.upgrades.tower; if (lvl === shownTower) return; shownTower = lvl; if (towerView) scene.remove(towerView); towerView = null; if (lvl > 0) { towerView = createTower(lvl); towerView.position.set(towerPoint.x, 0, towerPoint.z); scene.add(towerView); } const st = towerStats(lvl); towerRing.visible = !!st; if (st) { towerRing.geometry.dispose(); towerRing.geometry = new THREE.RingGeometry(st.range - .1, st.range, 64); towerRing.material.opacity = .35; } }
 const helperLoad = Array.from({ length: assistantCapacity }, (_, i) => meatMesh(helper, i % 2 ? -.2 : .2, 1.05 + Math.floor(i / 2) * .19, -.62, .44, .17, .5));
+const bossTag = label('boss-tag', 0, 5.6, 0); bossTag.el.textContent = '熊王'; bossTag.el.hidden = true;
 const helperLabel = label('', -6, 2.9, 7); helperLabel.el.innerHTML = '搬肉助手';
 let shownHelperLv = 0;
 
@@ -475,6 +476,7 @@ function draw(t) {
         else if (e.type === 'arrow') { transfer('arrow', e.from, e.to, 5); }
         else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); sfx.pay(); endCoach('pad'); }
         else if (e.type === 'tip') showCoach(e.id);
+        else if (e.type === 'boss') { toast('熊王回來了！跟著金色箭頭去討伐'); sfx.star(); buzz([20, 30, 20]); bossAlert = 8; }
         else if (e.type === 'star') { burst(s.x, s.z, '#f0b23a'); for (let i = 0; i < 8; i++) spark(s.x + Math.cos(i * .8) * 1.1, s.z + Math.sin(i * .8) * 1.1, '#ffd54a', .32, .6, 3); sfx.star(); if (e.stars > 1 || !stageCleared(s) || s.earned > stageOf(s).goal) toast(`第 ${e.stars} 顆星！${e.label}`); save(); }
         else if (e.type === 'sale') { moneyRun.sale += e.value; const from = { x: table.x + .8, z: e.lane ? table.z - 1.2 : table.z + .4 }; for (let k = 0; k < Math.min(3, e.count || 1); k++) transfer('meat', { x: from.x, z: from.z + k * .25 }, e.customer, 3 + k * .4); transfer('bill', e.customer, cashPoint, 2.4); }
         else if (e.type === 'built') { burst(e.x, e.z); buzz(18); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'helper' ? (level(s, 'helper') === 1 ? '助手上工了，會自動把地上的肉搬回桌上' : `助手 Lv.${level(s, 'helper')}：背得更多、走得更快`) : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : e.id === 'window' ? (s.upgrades.window === 1 ? '第二個窗口開張！兩排客人同時買肉' : `窗口 Lv.${s.upgrades.window}：每位客人一次買 ${s.upgrades.window} 份`) : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
@@ -509,7 +511,12 @@ function draw(t) {
   packMeat.rotation.z = packCash.rotation.z = Math.sin(visualTime * 7) * .02;
 
   // guide arrow at the player's feet
-  if (currentAction && running) { const dx = currentAction.x - s.x, dz = currentAction.z - s.z, dd = Math.hypot(dx, dz); guideGroup.visible = dd > 3 && currentAction.id !== 'auto'; guideGroup.position.set(player.position.x, 0, player.position.z); guideGroup.rotation.y = Math.atan2(dx, dz); guideArrow.material.color.set(currentAction.id === 'cash' ? '#5fd45a' : currentAction.id === 'table' ? '#e5717e' : currentAction.id === 'pad' ? '#f0c75a' : '#ffffff'); guideArrow.position.z = 1.9 + Math.sin(visualTime * 6) * .15; } else guideGroup.visible = false;
+  // Bear King: a gold tag rides above every living king; after it returns, the foot arrow points at it for a while.
+  const king = s.bears.find(b => b.hp > 0 && b.id < herdSize(s) && kindOf(stageOf(s), b.id) === 'king');
+  bossTag.el.hidden = !king; if (king) bossTag.p.set(king.x, 5.6, king.z);
+  bossAlert = king ? Math.max(0, bossAlert - dt) : 0;
+  const pointAt = bossAlert > 0 && running ? { id: 'boss', x: king.x, z: king.z } : currentAction;
+  if (pointAt && running) { const currentAction = pointAt; const dx = currentAction.x - s.x, dz = currentAction.z - s.z, dd = Math.hypot(dx, dz); guideGroup.visible = dd > 3 && currentAction.id !== 'auto'; guideGroup.position.set(player.position.x, 0, player.position.z); guideGroup.rotation.y = Math.atan2(dx, dz); guideArrow.material.color.set(currentAction.id === 'cash' ? '#5fd45a' : currentAction.id === 'table' ? '#e5717e' : currentAction.id === 'pad' || currentAction.id === 'boss' ? '#f0c75a' : '#ffffff'); guideArrow.position.z = 1.9 + Math.sin(visualTime * 6) * .15; } else guideGroup.visible = false;
   audioKit.schedule(); flushMoney(dt);
   // coaching halo follows its target and pulses until the action is done or it times out
   if (coach.id) {
@@ -608,5 +615,5 @@ function draw(t) {
 $('save-note').textContent = `${loaded.notice || '自動儲存於此瀏覽器 · 支援觸控與鍵盤'} · 版本 ${buildLabel}`;
 if (s.time > 0) $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`;
 buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle);
-if (location.search.includes("debug")) window.__polar = { state: () => s, scene, pads: () => padViews, coach, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), prey: i => { const g = bearViews[i]; const w = new THREE.Vector3(); g.userData.body.getWorldPosition(w); return { visible: g.visible, dying: g.userData.dying, spawn: g.userData.spawn, pos: [g.position.x, g.position.y, g.position.z], inner: [g.userData.inner.position.x, g.userData.inner.position.y, g.userData.inner.position.z], rot: [g.userData.inner.rotation.x, g.userData.inner.rotation.z], scale: g.userData.inner.scale.y, world: [w.x, w.y, w.z] }; }, slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
+if (location.search.includes("debug")) window.__polar = { state: () => s, scene, pads: () => padViews, coach, guide: () => ({ action: currentAction?.id, visible: guideGroup.visible, color: guideArrow.material.color.getHexString(), heading: guideGroup.rotation.y }), teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), prey: i => { const g = bearViews[i]; const w = new THREE.Vector3(); g.userData.body.getWorldPosition(w); return { visible: g.visible, dying: g.userData.dying, spawn: g.userData.spawn, pos: [g.position.x, g.position.y, g.position.z], inner: [g.userData.inner.position.x, g.userData.inner.position.y, g.userData.inner.position.z], rot: [g.userData.inner.rotation.x, g.userData.inner.rotation.z], scale: g.userData.inner.scale.y, world: [w.x, w.y, w.z] }; }, slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
 applyTheme(); rebuildCamp(); syncBuildings(false); renderStages(); updateHud(); requestAnimationFrame(draw);
