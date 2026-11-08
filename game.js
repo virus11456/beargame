@@ -7,6 +7,7 @@ import { padRadius, assistantCapacity } from './src/progression.js';
 import { nextAction, padLabel } from './src/guide.js';
 import { loadGame, saveGame, resetGame, exportCode, importCode } from './src/storage.js';
 import { icon, installSprite, iconDataUrl } from './src/icons.js';
+import { createAudio } from './src/audio.js';
 installSprite(document);
 import { counter, counters, customerCount } from './src/customers.js';
 
@@ -19,7 +20,7 @@ let loaded; try { loaded = loadGame(localStorage); } catch { loaded = { state: f
 let s = loaded.state;
 const SETTINGS_KEY = 'polar-camp-settings'; let settings = {}; try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { }
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-let running = false, sound = settings.sound !== false, low = settings.low === true, musicOn = settings.music !== false, audio, keys = {}, joy = { x: 0, z: 0 }, target = null, saveClock = 0, toastUntil = 0;
+let running = false, low = settings.low === true, keys = {}, joy = { x: 0, z: 0 }, target = null, saveClock = 0, toastUntil = 0;
 
 // ---------- renderer, camera, light ----------
 const scene = new THREE.Scene(); scene.background = new THREE.Color('#e4edf1'); scene.fog = new THREE.Fog('#e4edf1', 60, 120);
@@ -141,6 +142,19 @@ const padViews = pads.map(p => {
 
 // ---------- labels (DOM, projected) ----------
 const labels = [];
+// Floating money numbers: sales and pickups are summed over a short window
+// so fast selling shows one readable "+$" instead of a flood of tiny ones.
+const floats = [], moneyRun = { sale: 0, saleClock: 0, collect: 0, collectClock: 0 };
+function floatText(text, cls, x, y, z) {
+  if (floats.length > 10) floats.shift().el.remove();
+  const el = document.createElement('div'); el.className = 'float ' + cls; el.textContent = text; $('labels').append(el);
+  floats.push({ el, p: new THREE.Vector3(x, y, z), life: 1.1, max: 1.1 });
+}
+function flushMoney(dt) {
+  moneyRun.saleClock += dt; moneyRun.collectClock += dt;
+  if (moneyRun.sale && moneyRun.saleClock > .45) { floatText(`+$${moneyRun.sale}`, 'sale', table.x + .8, 2.6, table.z); moneyRun.sale = 0; moneyRun.saleClock = 0; }
+  if (moneyRun.collect && moneyRun.collectClock > .35) { floatText(`+$${moneyRun.collect}`, 'collect', s.x, 2.6, s.z); moneyRun.collect = 0; moneyRun.collectClock = 0; }
+}
 function label(className, x, y, z) { const el = document.createElement('div'); el.className = 'label ' + className; $('labels').append(el); const item = { el, p: new THREE.Vector3(x, y, z) }; labels.push(item); return item; }
 const padLabels = padViews.map(({ pad: p }) => { const l = label('pad-label', p.x, 1.1, p.z); l.el.style.pointerEvents = 'auto'; l.el.onclick = () => { if (running) target = { x: p.x, z: p.z }; }; return l; });
 const tableLabel = label('table-label', table.x + .8, 1.5, table.z - 2.2); const cashLabel = label('cash-label', cashPoint.x, 1.2, cashPoint.z + .6);
@@ -240,7 +254,7 @@ function buildStageProps(theme) {
 }
 function switchState(next, message) {
   s = next; target = null; keys = {}; clearJoy(); acc = 0; saveClock = 0;
-  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const e of effects) scene.remove(e); effects.length = 0;
+  for (const f of transfers) scene.remove(f.mesh); transfers.length = 0; for (const f of floats) f.el.remove(); floats.length = 0; moneyRun.sale = moneyRun.collect = 0; for (const e of effects) scene.remove(e); effects.length = 0;
   buildBears(); applyTheme(); rebuildCamp(); syncBuildings(false); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
 }
 buildBears();
@@ -275,69 +289,23 @@ for (let i = 0; i < snowCount; i++) { snowPos[i * 3] = (noise(i) - .5) * 60; sno
 snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
 const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: '#ffffff', size: .22, transparent: true, opacity: .75, depthWrite: false })); scene.add(snow);
 
-// ---------- music (synthesized: wind bed + slow pentatonic lullaby per stage theme) ----------
-const scales = { bay: [277, 311, 370, 415, 466], peak: [294, 330, 370, 440, 494], polar: [175, 208, 233, 262, 311], snow: [262, 294, 330, 392, 440], ice: [294, 349, 392, 440, 523], dusk: [247, 294, 330, 370, 440], aurora: [220, 262, 294, 330, 392], night: [196, 233, 262, 311, 349] };
-let music = null, nextBeat = 0, beat = 0;
-function startMusic() {
-  if (!audio || music) return;
-  if (!noiseBuffer) { noiseBuffer = audio.createBuffer(1, audio.sampleRate, audio.sampleRate); const d = noiseBuffer.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
-  const master = audio.createGain(); master.gain.value = 0; master.connect(audio.destination);
-  const wind = audio.createBufferSource(); wind.buffer = noiseBuffer; wind.loop = true; const lp = audio.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = .6;
-  const lfo = audio.createOscillator(); lfo.frequency.value = .07; const depth = audio.createGain(); depth.gain.value = 260; lfo.connect(depth); depth.connect(lp.frequency);
-  const windGain = audio.createGain(); windGain.gain.value = .5; wind.connect(lp); lp.connect(windGain); windGain.connect(master); wind.start(); lfo.start();
-  music = { master }; nextBeat = audio.currentTime + .2; beat = 0;
-}
-function pluck(f, at, len, gain) { const o = audio.createOscillator(), g = audio.createGain(); o.type = 'triangle'; o.frequency.value = f; g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(gain, at + .06); g.gain.exponentialRampToValueAtTime(.001, at + len); o.connect(g); g.connect(music.master); o.start(at); o.stop(at + len + .05); }
-function scheduleMusic() {
-  if (!audio || !music) return;
-  const level = !musicOn || document.hidden ? 0 : running ? .55 : .28; music.master.gain.setTargetAtTime(level, audio.currentTime, .9);
-  if (level === 0) { nextBeat = Math.max(nextBeat, audio.currentTime); return; }
-  const scale = scales[stageOf(s).theme] || scales.snow;
-  while (nextBeat < audio.currentTime + .8) {
-    const stepIn = beat % 8;
-    if (stepIn === 0) pluck(scale[0] / 2, nextBeat, 2.4, .05);
-    if (stepIn % 2 === 0 || noise(beat) < .35) pluck(scale[Math.floor(noise(beat * 1.7 + 3) * scale.length)], nextBeat, 1.4, stepIn === 0 ? .022 : .03);
-    nextBeat += .62; beat++;
-  }
-}
-const buzz = ms => { if (sound && navigator.vibrate) try { navigator.vibrate(ms); } catch { } };
-function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ sound, low, music: musicOn })); } catch { } }
+// ---------- audio (src/audio.js) ----------
+const audioKit = createAudio({ sound: settings.sound, music: settings.music, theme: () => stageOf(s).theme, playing: () => running });
+const buzz = ms => audioKit.buzz(ms), sfx = audioKit.sfx;
+function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ sound: audioKit.sound, low, music: audioKit.music })); } catch { } }
 
-// ---------- audio & UI helpers ----------
-function beep(f = 500, len = .1, type = 'sine', gain = .04) { if (!sound || !audio) return; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, audio.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(40, f * .6), audio.currentTime + len); g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + len + .02); }
-let noiseBuffer = null;
-function hiss(len, from, to, gain, q = 1) {
-  if (!sound || !audio) return;
-  if (!noiseBuffer) { noiseBuffer = audio.createBuffer(1, audio.sampleRate, audio.sampleRate); const d = noiseBuffer.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
-  const src = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain(); src.buffer = noiseBuffer; f.type = 'bandpass'; f.Q.value = q;
-  f.frequency.setValueAtTime(from, audio.currentTime); f.frequency.exponentialRampToValueAtTime(to, audio.currentTime + len);
-  g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len);
-  src.connect(f); f.connect(g); g.connect(audio.destination); src.start(); src.stop(audio.currentTime + len + .02);
-}
-function tone(f, len, type = 'sine', gain = .05, delay = 0, slide = 1) { if (!sound || !audio) return; const t0 = audio.currentTime + delay; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * slide, t0 + len); g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(gain, t0 + .012); g.gain.exponentialRampToValueAtTime(.001, t0 + len); o.connect(g); g.connect(audio.destination); o.start(t0); o.stop(t0 + len + .02); }
-const sfx = {
-  slash: () => hiss(.16, 1800, 350, .07, .8),
-  hit: () => { hiss(.08, 900, 300, .05, 1.5); tone(110, .12, 'sine', .05, 0, .6); },
-  kill: () => { hiss(.22, 700, 150, .08, 1.2); tone(80, .25, 'triangle', .07, 0, .5); },
-  pickup: () => tone(560, .06, 'sine', .035, 0, 1.35),
-  deposit: () => tone(420, .05, 'triangle', .03, 0, 1.2),
-  coin: () => { tone(1318, .07, 'sine', .045); tone(1760, .09, 'sine', .04, .06); },
-  pay: () => tone(990, .04, 'triangle', .025, 0, 1.1),
-  built: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .22, 'triangle', .05, i * .09)),
-  fanfare: () => [523, 659, 784, 1047, 1318].forEach((f, i) => tone(f, .35, 'triangle', .06, i * .12)),
-  star: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, .28, 'triangle', .05, i * .09)),
-  hurt: () => tone(160, .14, 'square', .03, 0, .7),
-};
+
+// ---------- UI helpers ----------
 function toast(t) { $('toast').textContent = t; $('toast').style.opacity = 1; toastUntil = performance.now() + 2400; }
 function save() { try { saveGame(localStorage, s); } catch { $('save-note').textContent = '瀏覽器不允許儲存，進度只保留於本次遊玩。'; } }
 function stop() { if (storyMode) { $('story').hidden = true; storyMode = null; } renderStages(); running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`; save(); }
-$('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); startMusic(); } catch { } $('menu').hidden = true; if (!s.storySeen) showStory('intro'); else running = true; };
+$('start').onclick = () => { audioKit.unlock(); $('menu').hidden = true; if (!s.storySeen) showStory('intro'); else running = true; };
 $('pause').onclick = stop;
-$('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; saveSettings(); };
-$('music').onclick = () => { musicOn = !musicOn; $('music').textContent = `音樂：${musicOn ? '開' : '關'}`; saveSettings(); try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); startMusic(); } catch { } };
+$('sound').onclick = () => { audioKit.sound = !audioKit.sound; $('sound').textContent = `音效：${audioKit.sound ? '開' : '關'}`; saveSettings(); };
+$('music').onclick = () => { audioKit.music = !audioKit.music; $('music').textContent = `音樂：${audioKit.music ? '開' : '關'}`; saveSettings(); audioKit.unlock(); };
 function applyQuality() { renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; }
 $('quality').onclick = () => { low = !low; applyQuality(); saveSettings(); autoQuality.off = true; };
-$('sound').textContent = `音效：${sound ? '開' : '關'}`; $('music').textContent = `音樂：${musicOn ? '開' : '關'}`; applyQuality();
+$('sound').textContent = `音效：${audioKit.sound ? '開' : '關'}`; $('music').textContent = `音樂：${audioKit.music ? '開' : '關'}`; applyQuality();
 $('export').onclick = async () => {
   const code = exportCode(s); let copied = false;
   try { await navigator.clipboard.writeText(code); copied = true; } catch { }
@@ -500,7 +468,7 @@ function draw(t) {
         else if (e.type === 'kill') { spark(e.x, e.z, '#ffffff', .6, .3); sfx.kill(); shake = Math.max(shake, e.kind === 'king' ? 1 : e.kind === 'giant' ? .6 : e.kind === 'walrus' ? .3 : .14); if (e.kind === 'king') { toast('熊王倒下了！滿地都是肉'); buzz([40, 30, 60]); } for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - .5), e.z + (Math.random() - .5), '#ffffff', .35, .5, 2.5); const g = preyAt(e.x, e.z, e.id); if (g) { g.visible = true; g.position.set(e.x, 0, e.z); g.userData.dying = 1.4; g.userData.hit = 0; g.userData.poof = true; } }
         else if (e.type === 'pickup') { if (!e.actor) { transfer('meat', e.from, e.to, 4); sfx.pickup(); endCoach('loot'); } }
         else if (e.type === 'deposit') { transfer('meat', e.from, e.to, 2.8); if (!e.actor) { sfx.deposit(); endCoach('table'); } }
-        else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) { sfx.coin(); endCoach('cash'); } }
+        else if (e.type === 'collect') { transfer('bill', e.from, e.to, e.actor ? 2 : 3.2); if (!e.actor) { sfx.coin(); endCoach('cash'); moneyRun.collect += e.value; } }
         else if (e.type === 'building') { syncBuildings(true); for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - .5) * 3, e.z + (Math.random() - .5) * 3, '#e8dcc8', .5, .6, 1.8); toast(`${e.name}蓋好了！`); sfx.built(); shake = Math.max(shake, .25); }
         else if (e.type === 'expand') { rebuildCamp(); const c = e.camp; for (let i = 0; i < 14; i++) spark(c.minX + Math.random() * (c.maxX - c.minX), c.minZ + Math.random() * (c.maxZ - c.minZ), '#ffffff', .6, .8, 1.2); toast('營地擴大了！新的土地圍好柵欄'); sfx.fanfare(); shake = Math.max(shake, .35); }
         else if (e.type === 'automated') { burst(s.x, s.z, '#9ff39a'); toast('營地全自動運轉！助手、箭塔、收銀員、獵人都到齊了'); sfx.fanfare(); }
@@ -508,7 +476,7 @@ function draw(t) {
         else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); sfx.pay(); endCoach('pad'); }
         else if (e.type === 'tip') showCoach(e.id);
         else if (e.type === 'star') { burst(s.x, s.z, '#f0b23a'); for (let i = 0; i < 8; i++) spark(s.x + Math.cos(i * .8) * 1.1, s.z + Math.sin(i * .8) * 1.1, '#ffd54a', .32, .6, 3); sfx.star(); if (e.stars > 1 || !stageCleared(s) || s.earned > stageOf(s).goal) toast(`第 ${e.stars} 顆星！${e.label}`); save(); }
-        else if (e.type === 'sale') { const from = { x: table.x + .8, z: e.lane ? table.z - 1.2 : table.z + .4 }; for (let k = 0; k < Math.min(3, e.count || 1); k++) transfer('meat', { x: from.x, z: from.z + k * .25 }, e.customer, 3 + k * .4); transfer('bill', e.customer, cashPoint, 2.4); }
+        else if (e.type === 'sale') { moneyRun.sale += e.value; const from = { x: table.x + .8, z: e.lane ? table.z - 1.2 : table.z + .4 }; for (let k = 0; k < Math.min(3, e.count || 1); k++) transfer('meat', { x: from.x, z: from.z + k * .25 }, e.customer, 3 + k * .4); transfer('bill', e.customer, cashPoint, 2.4); }
         else if (e.type === 'built') { burst(e.x, e.z); buzz(18); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'helper' ? (level(s, 'helper') === 1 ? '助手上工了，會自動把地上的肉搬回桌上' : `助手 Lv.${level(s, 'helper')}：背得更多、走得更快`) : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : e.id === 'window' ? (s.upgrades.window === 1 ? '第二個窗口開張！兩排客人同時買肉' : `窗口 Lv.${s.upgrades.window}：每位客人一次買 ${s.upgrades.window} 份`) : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
         else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); sfx.hurt(); buzz(12); shake = Math.max(shake, .1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
@@ -542,7 +510,7 @@ function draw(t) {
 
   // guide arrow at the player's feet
   if (currentAction && running) { const dx = currentAction.x - s.x, dz = currentAction.z - s.z, dd = Math.hypot(dx, dz); guideGroup.visible = dd > 3 && currentAction.id !== 'auto'; guideGroup.position.set(player.position.x, 0, player.position.z); guideGroup.rotation.y = Math.atan2(dx, dz); guideArrow.material.color.set(currentAction.id === 'cash' ? '#5fd45a' : currentAction.id === 'table' ? '#e5717e' : currentAction.id === 'pad' ? '#f0c75a' : '#ffffff'); guideArrow.position.z = 1.9 + Math.sin(visualTime * 6) * .15; } else guideGroup.visible = false;
-  scheduleMusic();
+  audioKit.schedule(); flushMoney(dt);
   // coaching halo follows its target and pulses until the action is done or it times out
   if (coach.id) {
     const c = running ? coachTarget() : null;
@@ -630,6 +598,7 @@ function draw(t) {
     else { e.position.y += dt * u.rise; e.scale.multiplyScalar(1 + dt * u.grow); e.material.opacity = Math.max(0, u.life / u.max); }
     if (u.life <= 0) { scene.remove(e); effects.splice(i, 1); }
   }
+  for (let i = floats.length - 1; i >= 0; i--) { const f = floats[i]; f.life -= dt; f.p.y += dt * 1.5; f.el.style.opacity = Math.min(1, f.life / f.max * 2.2); if (f.life <= 0) { f.el.remove(); floats.splice(i, 1); continue; } const v = f.p.clone().project(camera); f.el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; f.el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; }
   for (const { el, p } of labels) { const v = p.clone().project(camera); el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; el.style.display = v.z > 1 ? 'none' : ''; }
   if (t > toastUntil) $('toast').style.opacity = 0;
   hudTime += dt; if (hudTime > .12 || s.coins !== lastCoins) { updateHud(); hudTime = 0; lastCoins = s.coins; }
