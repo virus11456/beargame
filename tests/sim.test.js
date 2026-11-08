@@ -90,7 +90,7 @@ test('corrupt saves fall back to a fresh camp and version five camps keep their 
   const old = { version: 5, coins: 100, pendingCash: 40, earned: 900, kills: 12, sold: 70, upgrades: { weapon: 3, bag: 9, speed: 1 }, helper: true, queues: {}, bears: [] };
   const s = parseSave(JSON.stringify(old));
   assert.equal(s.version, 7); assert.equal(s.coins, 140); assert.equal(s.earned, 900); assert.equal(s.sold, 70);
-  assert.deepEqual(s.upgrades, { weapon: 3, bag: 5, speed: 1, herd: 0, tower: 0, hunter: 0 }); assert.equal(s.helper, true); assert.equal(s.meat, 0); assert.equal(s.version, 7);
+  assert.deepEqual(s.upgrades, { weapon: 3, bag: 7, speed: 1, herd: 0, tower: 0, hunter: 0, window: 0 }); assert.equal(s.helper, true); assert.equal(s.meat, 0); assert.equal(s.version, 7);
 });
 
 test('a bear that the player walks away from stops chasing and roams near home', () => {

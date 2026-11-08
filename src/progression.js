@@ -1,17 +1,18 @@
 import { routeTarget, fenceStep, expandedCamp, buildingSlots, gatesOf } from './camp.js';
-import { stageOf } from './stages.js';
+import { stageOf, baseHerd, maxPrey } from './stages.js';
 // Ground upgrade pads. Standing on a pad drains carried cash into it bit by bit,
 // exactly like the reference playable: the price counts down and the upgrade
 // applies when it reaches zero. Partial payments stay on the pad.
 export const pads = [
   { id: 'weapon', name: '武器', icon: 'sword', x: -6, z: -3, prices: [45, 100, 200, 400, 800], detail: '更寬的揮砍與更高傷害' },
-  { id: 'bag', name: '上限', icon: 'stack', x: -2, z: -3, prices: [10, 60, 150, 300, 600], detail: '每級多背 20 份肉；蓋肉倉後桌上可放 400 份' },
-  { id: 'speed', name: '速度', icon: 'speed', x: -6, z: 1.5, prices: [100, 250, 500, 900], detail: '移動速度 +15%' },
-  { id: 'herd', name: '獵場', icon: 'bear', x: -2, z: 1.5, prices: [320, 700, 1500], detail: '更多北極熊，更大的獵場' },
+  { id: 'bag', name: '上限', icon: 'stack', x: -2, z: -3, prices: [10, 60, 150, 300, 600, 1000, 1600], detail: '每級多背 20 份肉；蓋肉倉後桌上可放 400 份' },
+  { id: 'speed', name: '速度', icon: 'speed', x: -6, z: 1.5, prices: [100, 250, 500, 900, 1500], detail: '移動速度 +15%' },
+  { id: 'herd', name: '獵場', icon: 'bear', x: -2, z: 1.5, prices: [320, 700, 1500, 2600, 4000], detail: '更多北極熊，更大的獵場' },
   { id: 'helper', name: '助手', icon: 'helper', x: -6, z: 5, prices: [425], detail: '自動撿肉送到桌上', requires: '售出 30 份' },
-  { id: 'tower', name: '箭塔', icon: 'tower', x: 2, z: -3, prices: [150, 400, 900], detail: '門外的箭塔自動射擊獵物' },
+  { id: 'tower', name: '箭塔', icon: 'tower', x: 2, z: -3, prices: [150, 400, 900, 1600, 2800], detail: '門外的箭塔自動射擊獵物' },
   { id: 'cashier', name: '收銀員', icon: 'cashier', x: 2, z: 1.5, prices: [350], detail: '自動把桌邊的錢收進錢包', requires: '售出 60 份' },
-  { id: 'hunter', name: '獵人', icon: 'hunter', x: 7, z: -3.5, prices: [600, 1200, 2400], detail: '每級多一位獵人出門狩獵', requires: '箭塔 Lv.1' },
+  { id: 'hunter', name: '獵人', icon: 'hunter', x: 7, z: -3.5, prices: [600, 1200, 2400, 4000], detail: '每級多一位獵人出門狩獵', requires: '箭塔 Lv.1' },
+  { id: 'window', name: '窗口', icon: 'window', x: -2, z: 5, prices: [300, 700, 1600], detail: '販售窗口升級', details: ['開第二個販售窗口，兩排客人同時買', '每位客人一次買 2 份', '每位客人一次買 3 份'] },
 ];
 export const padRadius = 1.35;
 export const level = (s, key) => key === 'helper' ? (s.helper ? 1 : 0) : key === 'cashier' ? (s.cashier ? 1 : 0) : s.upgrades[key];
@@ -19,9 +20,16 @@ export const maxLevel = key => pads.find(p => p.id === key).prices.length;
 export function price(s, key) {
   const pad = pads.find(p => p.id === key);
   if (!pad) return null;
-  const base = pad.prices[level(s, key)];
+  const lvl = level(s, key), base = pad.prices[lvl];
+  // Herd levels past the prey cap would buy nothing, so they are not offered.
+  if (key === 'herd' && baseHerd(stageOf(s)) + lvl * 6 >= maxPrey) return null;
   return base === undefined ? null : Math.round(base * stageOf(s).priceScale / 5) * 5;
 }
+export const padDetail = (s, pad) => pad.details?.[level(s, pad.id)] ?? pad.detail;
+// Window upgrade: level 1 opens the second customer lane, levels 2 and 3
+// make every customer buy more pieces per visit.
+export const lanesOf = s => s.upgrades.window > 0 ? 2 : 1;
+export const perCustomer = s => Math.max(1, s.upgrades.window);
 export const canHire = s => s.sold >= 30;
 export const unlocked = (s, key) => key === 'helper' ? canHire(s) : key === 'cashier' ? s.sold >= 60 : key === 'hunter' ? s.upgrades.tower > 0 : true;
 export const automation = s => ({ helper: s.helper, tower: s.upgrades.tower > 0, cashier: s.cashier, hunter: s.upgrades.hunter > 0 });
@@ -44,6 +52,8 @@ export function apply(s, key, events) {
   else if (key === 'cashier') s.cashier = true;
   else s.upgrades[key]++;
   if (key === 'hunter') s.hunters.push(newHunter(s.hunters.length));
+  // The second line walks in from the far end of the snow path when it opens.
+  if (key === 'window' && s.upgrades.window === 1) for (const c of s.customers2.people) c.x += 9;
   const building = buildingOf[key];
   if (building && !s.buildings.includes(building) && s.buildings.length < buildingSlots.length) {
     const before = campOf(s); s.buildings.push(building); const after = campOf(s);
@@ -76,7 +86,7 @@ export function updateHunters(s, dt, active, events, kill) {
 // A single sword, swung in a wide arc that hits every bear inside the fan.
 export const towerPoint = { x: -12.5, z: -9.5 };
 export function towerStats(lvl) {
-  return lvl <= 0 ? null : { damage: [0, 10, 18, 30][lvl], interval: [0, 1.2, 1, .8][lvl], range: [0, 10, 12.5, 15][lvl] };
+  return lvl <= 0 ? null : { damage: [0, 10, 18, 30, 45, 65][lvl], interval: [0, 1.2, 1, .8, .65, .5][lvl], range: [0, 10, 12.5, 15, 16.5, 18][lvl] };
 }
 export function weaponStats(lvl) {
   return {

@@ -3,14 +3,14 @@
 // meat → drop it on the sales table → customers pay cash at the table →
 // collect the cash → stand on ground pads to buy upgrades and expand.
 import { newCustomers, moveCustomers, readyCustomer, takeMeat, validCustomers } from './customers.js';
-import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, starsOf, starGoals, starLabels, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter, campOf, buildingOf, buildingNames } from './progression.js';
+import { pads, padRadius, price, level, maxLevel, canHire, unlocked, automation, fullyAutomated, apply, weaponStats, towerStats, towerPoint, lanesOf, perCustomer, padDetail, starsOf, starGoals, starLabels, newAssistant, assistantCapacity, updateAssistant, updateHunters, newHunter, campOf, buildingOf, buildingNames } from './progression.js';
 import { camp, gate, inCamp, fenceStep, routeTarget, keepOutside, pushOut, buildingSlots, expandedCamp } from './camp.js';
 import { stages, stories, stageOf, prey, kindOf, baseHerd, maxPrey, stageCleared, hasNext } from './stages.js';
-export { price, level, canHire, unlocked, automation, fullyAutomated, starsOf, starGoals, starLabels, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, campOf, buildingOf, buildingNames, buildingSlots, expandedCamp, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
+export { price, level, canHire, unlocked, automation, fullyAutomated, lanesOf, perCustomer, padDetail, starsOf, starGoals, starLabels, pads, weaponStats, towerStats, towerPoint, camp, gate, inCamp, routeTarget, campOf, buildingOf, buildingNames, buildingSlots, expandedCamp, stages, stories, stageOf, prey, kindOf, stageCleared, hasNext };
 
 export const config = {
   speed: 6.2, capacityPerLevel: 20,
-  pickup: 2, dropLimit: 320, stockLimit: 240, serveInterval: .4,
+  pickup: 2, dropLimit: 320, stockLimit: 240, serveInterval: .05,
   bearHp: prey.bear.hp, lootPerBear: prey.bear.loot, herdPerLevel: 6, maxBears: maxPrey,
   aggro: 6, biteRange: 1.45, maxBiters: 3,
   regenCamp: 10, regenField: 1.2,
@@ -45,10 +45,10 @@ export function fresh(stage = 0, unlocked = 0) {
   return {
     version: 7, stage: def.id, unlocked: Math.max(unlocked, def.id), cleared: false, lifetime: 0, name: '獵人', totalKills: 0, records: {}, storySeen: false, stars: 0, tips: { loot: false, table: false, cash: false, pad: false },
     x: 0, z: 2, face: Math.PI, hp: 100, coins: 0, cash: 0, earned: 0, kills: 0, sold: 0,
-    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0 }, helper: false, cashier: false, hunters: [], buildings: [],
-    paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0, tower: 0, cashier: 0, hunter: 0 }, padLatch: null,
-    attack: 0, towerTimer: 0, transfer: 0, serve: 0, cashTimer: 0, payTimer: 0, time: 0,
-    customers: newCustomers(), assistant: newAssistant(),
+    meat: 0, stock: 0, upgrades: { weapon: 0, bag: 0, speed: 0, herd: 0, tower: 0, hunter: 0, window: 0 }, helper: false, cashier: false, hunters: [], buildings: [],
+    paid: { weapon: 0, bag: 0, speed: 0, herd: 0, helper: 0, tower: 0, cashier: 0, hunter: 0, window: 0 }, padLatch: null,
+    attack: 0, towerTimer: 0, transfer: 0, serve: 0, serve2: 0, cashTimer: 0, payTimer: 0, time: 0,
+    customers: newCustomers(0), customers2: newCustomers(1), assistant: newAssistant(),
     bears: Array.from({ length: config.maxBears }, (_, i) => bear(i, def)), drops: [],
   };
 }
@@ -167,28 +167,32 @@ export function step(s, dt, input = { x: 0, z: 0 }) {
     }
   } else s.transfer = 0;
 
-  // Customers buy raw meat one piece at a time and leave their cash beside the table.
-  moveCustomers(s.customers, dt);
-  const ready = readyCustomer(s.customers);
-  if (s.stock > 0 && ready) {
-    s.serve += dt;
-    if (s.serve >= config.serveInterval) {
-      s.serve -= config.serveInterval; s.stock--;
-      const customer = takeMeat(s.customers);
-      const value = meatPrice(s); s.cash += value; s.earned += value; s.sold++;
-      events.push({ type: 'sale', value, customerId: customer.id, customer: { x: customer.x, z: customer.z } });
-      if (!s.cleared && stageCleared(s)) { s.cleared = true; events.push({ type: 'stageClear', stage: s.stage, hasNext: hasNext(s) }); }
-    }
-  } else s.serve = 0;
+  // Customers buy raw meat and leave their cash beside the table. The window
+  // upgrade opens a second line and makes every customer buy more pieces.
+  const lanes = lanesOf(s);
+  for (let lane = 0; lane < lanes; lane++) {
+    const line = lane ? s.customers2 : s.customers, timer = lane ? 'serve2' : 'serve';
+    moveCustomers(line, dt);
+    if (s.stock > 0 && readyCustomer(line)) {
+      s[timer] += dt;
+      if (s[timer] >= config.serveInterval) {
+        s[timer] = 0;
+        const count = Math.min(s.stock, perCustomer(s)); s.stock -= count;
+        const customer = takeMeat(line, count);
+        const value = meatPrice(s) * count; s.cash += value; s.earned += value; s.sold += count;
+        events.push({ type: 'sale', value, count, lane, customerId: customer.id, customer: { x: customer.x, z: customer.z } });
+        if (!s.cleared && stageCleared(s)) { s.cleared = true; events.push({ type: 'stageClear', stage: s.stage, hasNext: hasNext(s) }); }
+      }
+    } else s[timer] = 0;
+  }
 
-  // Cash stays at the table until the player walks over and gathers it.
   // Cash stays at the table until the player (or the cashier) gathers it.
   const near = distance(s, cashPoint) < cashRange;
   if (s.cash > 0 && (near || s.cashier)) {
     s.cashTimer -= dt;
     while (s.cashTimer <= 0 && s.cash > 0) {
-      const chunk = near ? Math.min(s.cash, Math.max(meatPrice(s), Math.ceil(s.cash / 30))) : Math.min(s.cash, meatPrice(s) * 2);
-      s.cash -= chunk; s.coins += chunk; s.cashTimer += near ? .04 : .3;
+      const chunk = near ? Math.min(s.cash, Math.max(meatPrice(s), Math.ceil(s.cash / 30))) : Math.min(s.cash, Math.max(meatPrice(s) * 2, Math.ceil(s.cash / 6)));
+      s.cash -= chunk; s.coins += chunk; s.cashTimer += near ? .04 : .2;
       events.push({ type: 'collect', value: chunk, actor: near ? undefined : 'cashier', from: { ...cashPoint }, to: { x: s.x, z: s.z } });
     }
   } else s.cashTimer = 0;
@@ -243,20 +247,20 @@ export function parseSave(text) {
   if (v.version !== 7) throw Error('version');
   if (!count(v.stage, stages.length - 1) || !count(v.unlocked, stages.length - 1) || typeof v.cleared !== 'boolean' || !count(v.lifetime)) throw Error('stage');
   const stage = stages[v.stage];
-  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false; v.stars ??= 0; v.tips = { ...s.tips, ...(v.tips || {}) };
+  v.upgrades = { ...s.upgrades, ...(v.upgrades || {}) }; v.paid = { ...s.paid, ...(v.paid || {}) }; v.towerTimer ??= 0; v.cashier ??= false; v.hunters ??= []; v.name ??= '獵人'; v.totalKills ??= 0; v.records ??= {}; v.storySeen ??= false; v.stars ??= 0; v.customers2 ??= newCustomers(1); v.serve2 ??= 0; v.tips = { ...s.tips, ...(v.tips || {}) };
   if (!Array.isArray(v.buildings)) { v.buildings = []; for (const [k, b] of Object.entries(buildingOf)) if ((k === 'helper' ? v.helper : k === 'cashier' ? v.cashier : v.upgrades[k] > 0) && v.buildings.length < buildingSlots.length) v.buildings.push(b); }
   if (v.buildings.length > buildingSlots.length || new Set(v.buildings).size !== v.buildings.length || v.buildings.some(b => !buildingNames[b])) throw Error('buildings');
   if (typeof v.storySeen !== 'boolean' || !count(v.stars, 3) || Object.keys(s.tips).some(k => typeof v.tips[k] !== 'boolean')) throw Error('story');
   if (typeof v.name !== 'string' || v.name.length > 16 || typeof v.cashier !== 'boolean' || !count(v.totalKills) || typeof v.records !== 'object' || v.records === null) throw Error('profile');
-  if (!Array.isArray(v.hunters) || v.hunters.length > 3 || v.hunters.some(h => !Number.isFinite(h.x) || !Number.isFinite(h.z) || !finite(h.cool, 0))) throw Error('hunters');
-  for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'cashTimer', 'payTimer', 'towerTimer']) if (!Number.isFinite(v[k])) throw Error(k);
+  if (!Array.isArray(v.hunters) || v.hunters.length > maxLevel('hunter') || v.hunters.some(h => !Number.isFinite(h.x) || !Number.isFinite(h.z) || !finite(h.cool, 0))) throw Error('hunters');
+  for (const k of ['x', 'z', 'face', 'attack', 'transfer', 'serve', 'serve2', 'cashTimer', 'payTimer', 'towerTimer']) if (!Number.isFinite(v[k])) throw Error(k);
   for (const k of ['hp', 'time']) if (!finite(v[k], 0)) throw Error(k);
   for (const k of ['coins', 'cash', 'earned', 'kills', 'sold', 'meat', 'stock']) if (!count(v[k])) throw Error(k);
   if (v.meat > 400 || v.stock > config.stockLimit + 160) throw Error('stacks');
   for (const k of Object.keys(s.upgrades)) if (!count(v.upgrades?.[k], maxLevel(k))) throw Error('upgrade');
   for (const k of Object.keys(s.paid)) if (!count(v.paid?.[k])) throw Error('paid');
   if (typeof v.helper !== 'boolean') throw Error('helper');
-  if (!validCustomers(v.customers)) throw Error('customers');
+  if (!validCustomers(v.customers) || !validCustomers(v.customers2) || (v.customers.lane ?? 0) !== 0 || v.customers2.lane !== 1) throw Error('customers');
   if (!Array.isArray(v.bears) || v.bears.length > config.maxBears || v.bears.some((b, i) => b.id !== i || ['x', 'z', 'hx', 'hz', 'hp', 'cool', 'respawn'].some(k => !Number.isFinite(b[k])))) throw Error('bears');
   s = fresh(v.stage, v.unlocked);
   // Older saves stored fewer prey slots; the missing ones spawn fresh.

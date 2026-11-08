@@ -169,6 +169,9 @@ export function createTower(level = 1) {
   part(bow, '#445c6a', 0, .1, 0, .22, .18, 1.1); part(bow, '#9c7345', 0, .12, .45, 1.1, .1, .12); part(bow, '#e5e4cc', 0, .14, .2, .9, .03, .03, unit, false);
   if (level >= 2) { const roof = new THREE.Mesh(new THREE.ConeGeometry(1.5, .9, 4), material('#c43f2d')); roof.position.y = h + 1.5; roof.rotation.y = Math.PI / 4; roof.castShadow = true; g.add(roof); }
   if (level >= 3) { part(g, '#6b4b32', 0, h + 2.4, 0, .06, 1.4, .06, unit, false); part(g, '#f0c75a', .35, h + 2.85, 0, .7, .4, .03, unit, false); }
+  // Lv.4 adds gold trim and lanterns; Lv.5 a second crossbow facing the other way.
+  if (level >= 4) { for (const x of [-.95, .95]) for (const z of [-.95, .95]) part(g, '#f0c75a', x, h + .82, z, .16, .16, .16); for (const x of [-.75, .75]) part(g, '#ffd27a', x, h - .25, .78, .22, .3, .22); }
+  if (level >= 5) { const bow2 = new THREE.Group(); bow2.position.set(0, h + .55, 0); bow2.rotation.y = Math.PI; g.add(bow2); part(bow2, '#445c6a', 0, .1, 0, .22, .18, 1.1); part(bow2, '#9c7345', 0, .12, .45, 1.1, .1, .12); part(bow2, '#5fd4c8', 0, .14, .2, .9, .03, .03, unit, false); }
   g.userData.bow = bow; return g;
 }
 

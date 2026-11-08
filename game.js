@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createHuman, animateHuman, createBear, animatePrey, createTree, createBuilding, meatGeometry, meatMaterial, createWeapon, createTower, slashColors, part, material, rounded, unit, smooth } from './src/art.js';
-import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf, stockLimit, starsOf, starGoals, starLabels } from './src/sim.js';
+import { fresh, step, capacity, config, distance, table, tableRange, cashPoint, cashRange, worldBounds, camp, gate, herdSize, pads, price, level, canHire, weaponStats, routeTarget, stages, stageOf, preyOf, kindOf, stageCleared, hasNext, nextStage, startStage, towerStats, towerPoint, automation, fullyAutomated, storyOf, campOf, stockLimit, starsOf, starGoals, starLabels, lanesOf, padDetail } from './src/sim.js';
 import { gatesOf, maxCamp, buildingSlots } from './src/camp.js';
 import { themes } from './src/stages.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
@@ -8,7 +8,7 @@ import { nextAction, padLabel } from './src/guide.js';
 import { loadGame, saveGame, resetGame, exportCode, importCode } from './src/storage.js';
 import { icon, installSprite, iconDataUrl } from './src/icons.js';
 installSprite(document);
-import { counter, customerCount } from './src/customers.js';
+import { counter, counters, customerCount } from './src/customers.js';
 
 const $ = id => document.getElementById(id);
 // Build stamp injected by vite.config.js: shown in the corner and the pause menu.
@@ -61,14 +61,17 @@ const groundMesh = box(scene, '#eef3f5', 0, -.5, -12, 220, 1, 220); groundMesh.m
 const floorMesh = box(scene, '#c9996a', 0, .02, 0, 1, .1, 1); floorMesh.material = new THREE.MeshStandardMaterial({ color: '#c9996a', roughness: .9 });
 const floorLightMesh = box(scene, '#d4a878', 0, .035, 0, 1, .1, 1, false); floorLightMesh.material = new THREE.MeshStandardMaterial({ color: '#d4a878', roughness: .9 });
 const floorPatches = Array.from({ length: 40 }, (_, i) => ball(scene, i % 2 ? '#cfa072' : '#dbb286', 0, .07, 0, .6 + noise(i + 9) * .75, .04, .4 + noise(i + 3) * .5));
-// Snow path for the customer line.
+// Snow path for the customer line; the second lane's path appears with the window upgrade.
 box(scene, '#dbe8f1', counter.x + 9.5, .015, counter.z, 23, .08, 2.8, false);
 box(scene, '#cfe0ec', counter.x + 9.5, .02, counter.z, 23, .08, .5, false);
+const lane2 = new THREE.Group(); scene.add(lane2);
+box(lane2, '#dbe8f1', counters[1].x + 9.5, .012, counters[1].z - .3, 23, .08, 2.2, false); box(lane2, '#cfe0ec', counters[1].x + 9.5, .018, counters[1].z, 23, .08, .5, false);
+box(lane2, '#4d9ad6', counters[1].x - .9, 1.9, counters[1].z - .9, .9, .55, .1); box(lane2, '#f4f8fa', counters[1].x - .9, 1.9, counters[1].z - .85, .66, .34, .05, false); box(lane2, '#6e5033', counters[1].x - .9, .9, counters[1].z - .9, .1, 1.8, .1);
 // Snow mounds, rocks and bare trees around the field.
 for (let i = 0; i < 70; i++) {
   const x = -46 + noise(i * 3) * 92, z = -52 + noise(i * 3 + 1) * 66;
   if (x > maxCamp.minX - 3 && x < maxCamp.maxX + 3 && z > maxCamp.minZ - 3 && z < maxCamp.maxZ + 3) continue;
-  if (z > counter.z - 2.5 && z < counter.z + 2.5 && x > counter.x - 1 && x < counter.x + 18) continue;
+  if (z > counters[1].z - 2.5 && z < counter.z + 2.5 && x > counter.x - 1 && x < counter.x + 18) continue;
   const herdZone = Math.hypot(x, z * 1.15) < 24 && !(x > 8 && Math.abs(z) < 10);
   const kind = noise(i * 3 + 2);
   if (kind < .4) ball(scene, '#f8fbfc', x, .12, z, 1 + noise(i) * 1.3, .3 + noise(i + 1) * .25, .8 + noise(i + 2) * 1, true);
@@ -141,7 +144,7 @@ const labels = [];
 function label(className, x, y, z) { const el = document.createElement('div'); el.className = 'label ' + className; $('labels').append(el); const item = { el, p: new THREE.Vector3(x, y, z) }; labels.push(item); return item; }
 const padLabels = padViews.map(({ pad: p }) => { const l = label('pad-label', p.x, 1.1, p.z); l.el.style.pointerEvents = 'auto'; l.el.onclick = () => { if (running) target = { x: p.x, z: p.z }; }; return l; });
 const tableLabel = label('table-label', table.x + .8, 1.5, table.z - 2.2); const cashLabel = label('cash-label', cashPoint.x, 1.2, cashPoint.z + .6);
-const bubble = label('bubble', counter.x, 2.9, counter.z);
+const bubble = label('bubble', counter.x, 2.9, counter.z), bubble2 = label('bubble', counters[1].x, 2.9, counters[1].z);
 
 // ---------- characters ----------
 const player = createHuman('#3f8ed0', '#f6f2e8'); scene.add(player);
@@ -231,10 +234,12 @@ function switchState(next, message) {
   buildBears(); applyTheme(); rebuildCamp(); syncBuildings(false); follow.set(s.x, 0, s.z); save(); renderStages(); updateHud(); if (message) toast(message); if (!s.storySeen) { $('menu').hidden = true; showStory('intro'); }
 }
 buildBears();
-const customers = Array.from({ length: customerCount }, (_, i) => { const g = createHuman(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'); g.scale.setScalar(.92); g.userData.meat = meatMesh(g, 0, 1.05, .55, .6, .26, .55); g.userData.meat.visible = false; scene.add(g); return g; });
+const customerView = (coat, scarf) => { const g = createHuman(coat, scarf); g.scale.setScalar(.92); g.userData.meat = [0, 1, 2].map(k => meatMesh(g, k === 1 ? .18 : k === 2 ? -.18 : 0, 1.05 + k * .2, .55, .6, .26, .55)); g.userData.meat.forEach(m => m.visible = false); scene.add(g); return g; };
+const customers = Array.from({ length: customerCount }, (_, i) => customerView(['#7b4a37', '#8c5742', '#6f4433', '#946349', '#7a4f3f', '#89583f'][i], '#e5d6bf'));
+const customers2 = Array.from({ length: customerCount }, (_, i) => customerView(['#4f6f8a', '#6a5a86', '#3f7a74', '#7a6a4a', '#5a7a9a', '#865a6a'][i], '#efe3cf'));
 const helper = createHuman('#5f8a6e', '#efe6d6'); scene.add(helper); helper.visible = s.helper;
 const cashier = createHuman('#3f7fa8', '#f4f1e6'); cashier.position.set(cashPoint.x - 1.3, 0, cashPoint.z - .6); cashier.rotation.y = Math.PI * .75; scene.add(cashier);
-const hunterViews = Array.from({ length: 3 }, (_, i) => { const g = createHuman(['#8a5a3a', '#6f5a7a', '#4f7a5a'][i], '#e9dcc3'); const spear = new THREE.Group(); spear.position.set(.6, 1.1, 0); spear.rotation.x = -1.2; g.add(spear); box(spear, '#6b4b32', 0, 0, .9, .07, .07, 2.4); cone(spear, '#dfe8ec', 0, 0, 2.2, .11, .4).rotation.x = Math.PI / 2; scene.add(g); g.visible = false; return g; });
+const hunterViews = Array.from({ length: 4 }, (_, i) => { const g = createHuman(['#8a5a3a', '#6f5a7a', '#4f7a5a', '#7a4f4f'][i], '#e9dcc3'); const spear = new THREE.Group(); spear.position.set(.6, 1.1, 0); spear.rotation.x = -1.2; g.add(spear); box(spear, '#6b4b32', 0, 0, .9, .07, .07, 2.4); cone(spear, '#dfe8ec', 0, 0, 2.2, .11, .4).rotation.x = Math.PI / 2; scene.add(g); g.visible = false; return g; });
 let towerView = null, shownTower = -1;
 const towerRing = flatRing(towerPoint.x, towerPoint.z, '#f0c75a', 10, .08, 0);
 function refreshTower() { const lvl = s.upgrades.tower; if (lvl === shownTower) return; shownTower = lvl; if (towerView) scene.remove(towerView); towerView = null; if (lvl > 0) { towerView = createTower(lvl); towerView.position.set(towerPoint.x, 0, towerPoint.z); scene.add(towerView); } const st = towerStats(lvl); towerRing.visible = !!st; if (st) { towerRing.geometry.dispose(); towerRing.geometry = new THREE.RingGeometry(st.range - .1, st.range, 64); towerRing.material.opacity = .35; } }
@@ -450,10 +455,10 @@ function updateHud() {
     el.className = 'label pad-label' + (info.done ? ' done' : info.locked ? ' locked' : s.coins >= info.remaining ? ' affordable' : '') + (d < 2.3 ? ' near' : '');
     el.innerHTML = `${icon(p.icon, 'ic pad-icon')}${info.done ? `<b class="max">${icon('check')}MAX</b>` : info.locked ? `<b class="lock">${icon('lock')}${info.remaining}</b>` : `<b>${icon('bill')}${info.remaining}</b>`}<small>${p.name}</small>`;
   });
-  if (nearPad) { const { p, info } = nearPad; $('objective').querySelector('span').textContent = info.done ? `${p.name}已升到最高` : info.locked ? `${p.name}・需先${p.requires}` : `${p.name} Lv.${level(s, p.id) + 1}・${p.detail}（還差 ${info.remaining} 元）`; }
+  if (nearPad) { const { p, info } = nearPad; $('objective').querySelector('span').textContent = info.done ? `${p.name}已升到最高` : info.locked ? `${p.name}・需先${p.requires}` : `${p.name} Lv.${level(s, p.id) + 1}・${padDetail(s, p)}（還差 ${info.remaining} 元）`; }
   tableLabel.el.innerHTML = `販售桌 · ${s.stock} / ${stockLimit(s)}<small>${s.stock >= stockLimit(s) ? '桌子滿了，等客人買走' : s.stock ? '客人排隊購買中' : '把背上的肉堆到這裡'}</small>`;
   cashLabel.el.innerHTML = s.cash ? `$ ${s.cash}<small>走過來收錢</small>` : `收款處<small>客人付的錢會放在這</small>`; cashLabel.el.hidden = s.cash === 0 && s.sold > 0;
-  bubble.el.className = 'label bubble' + (s.stock ? '' : ' wait'); bubble.el.innerHTML = s.stock ? icon('meat', 'ic big') : '等肉…';
+  for (const b of [bubble, bubble2]) { b.el.className = 'label bubble' + (s.stock ? '' : ' wait'); b.el.innerHTML = s.stock ? icon('meat', 'ic big') : '等肉…'; }
 }
 
 // ---------- main loop ----------
@@ -481,8 +486,8 @@ function draw(t) {
         else if (e.type === 'pay') { transfer('bill', e.from, e.to, 3.6); sfx.pay(); endCoach('pad'); }
         else if (e.type === 'tip') showCoach(e.id);
         else if (e.type === 'star') { burst(s.x, s.z, '#f0b23a'); for (let i = 0; i < 8; i++) spark(s.x + Math.cos(i * .8) * 1.1, s.z + Math.sin(i * .8) * 1.1, '#ffd54a', .32, .6, 3); sfx.star(); if (e.stars > 1 || !stageCleared(s) || s.earned > stageOf(s).goal) toast(`第 ${e.stars} 顆星！${e.label}`); save(); }
-        else if (e.type === 'sale') { transfer('meat', { x: table.x + .8, z: table.z }, e.customer, 3); transfer('bill', e.customer, cashPoint, 2.4); }
-        else if (e.type === 'built') { burst(e.x, e.z); buzz(18); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
+        else if (e.type === 'sale') { const from = { x: table.x + .8, z: e.lane ? table.z - 1.2 : table.z + .4 }; for (let k = 0; k < Math.min(3, e.count || 1); k++) transfer('meat', { x: from.x, z: from.z + k * .25 }, e.customer, 3 + k * .4); transfer('bill', e.customer, cashPoint, 2.4); }
+        else if (e.type === 'built') { burst(e.x, e.z); buzz(18); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : e.id === 'window' ? (s.upgrades.window === 1 ? '第二個窗口開張！兩排客人同時買肉' : `窗口 Lv.${s.upgrades.window}：每位客人一次買 ${s.upgrades.window} 份`) : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
         else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); sfx.hurt(); buzz(12); shake = Math.max(shake, .1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
         else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); sfx.fanfare(); buzz([30, 40, 30]); save(); setTimeout(() => showStory('clear'), 900); }
@@ -577,12 +582,16 @@ function draw(t) {
   });
 
   // customers & helper
-  customers.forEach((g, i) => {
-    const c = s.customers.people[i]; const dx = c.x - g.position.x, dz = c.z - g.position.z;
-    if (Math.hypot(dx, dz) > .001) g.rotation.y = Math.atan2(dx, dz); g.position.set(c.x, 0, c.z);
-    if (c.phase === 'queue' || c.hold > 0) g.rotation.y = -Math.PI / 2; g.userData.meat.visible = c.carrying && c.hold < .1;
+  const twoLanes = lanesOf(s) > 1; lane2.visible = twoLanes;
+  [[customers, s.customers, bubble, counters[0], true], [customers2, s.customers2, bubble2, counters[1], twoLanes]].forEach(([views, line, bub, k, on]) => {
+    views.forEach((g, i) => {
+      g.visible = on; if (!on) return;
+      const c = line.people[i]; const dx = c.x - g.position.x, dz = c.z - g.position.z;
+      if (Math.hypot(dx, dz) > .001) g.rotation.y = Math.atan2(dx, dz); g.position.set(c.x, 0, c.z);
+      if (c.phase === 'queue' || c.hold > 0) g.rotation.y = -Math.PI / 2; g.userData.meat.forEach((m, n) => m.visible = c.carrying && c.hold < .05 && n < (c.count || 1));
+    });
+    const front = line.people[line.queue[0]]; if (front) bub.p.set(front.x, 2.9, front.z); bub.el.hidden = !on || !front || Math.hypot(front.x - k.x, front.z - k.z) > .3;
   });
-  const front = s.customers.people[s.customers.queue[0]]; if (front) bubble.p.set(front.x, 2.9, front.z); bubble.el.hidden = !front || Math.hypot(front.x - counter.x, front.z - counter.z) > .3;
   for (const g of buildingViews.values()) { const u = g.userData; if (u.rise > 0) { u.rise = Math.max(0, u.rise - dt); const k = 1 - u.rise / .9; const sc = k < .7 ? k / .7 * 1.15 : 1.15 - (k - .7) / .3 * .15; g.scale.setScalar(Math.max(.01, sc)); g.position.y = Math.sin(k * Math.PI) * .3; } if (u.fire) { u.fire.scale.y = .8 + Math.sin(visualTime * 9) * .3; u.fire.scale.x = u.fire.scale.z = .9 + Math.sin(visualTime * 7) * .15; } }
   cashier.visible = s.cashier; cashier.rotation.y = Math.PI * .75 + Math.sin(visualTime * 2) * .1;
   hunterViews.forEach((g, i) => { const h = s.hunters[i]; g.visible = !!h; if (!h) return; const dx = h.x - g.position.x, dz = h.z - g.position.z; if (Math.hypot(dx, dz) > .01) g.rotation.y = Math.atan2(dx, dz); g.position.set(h.x, 0, h.z); animateHuman(g, visualTime, dt); });
@@ -601,7 +610,7 @@ function draw(t) {
   for (const { el, p } of labels) { const v = p.clone().project(camera); el.style.left = (v.x * .5 + .5) * innerWidth + 'px'; el.style.top = (-v.y * .5 + .5) * innerHeight + 'px'; el.style.display = v.z > 1 ? 'none' : ''; }
   if (t > toastUntil) $('toast').style.opacity = 0;
   hudTime += dt; if (hudTime > .12 || s.coins !== lastCoins) { updateHud(); hudTime = 0; lastCoins = s.coins; }
-  animateHuman(player, visualTime, dt); if (s.helper) animateHuman(helper, visualTime, dt); customers.forEach(g => animateHuman(g, visualTime, dt));
+  animateHuman(player, visualTime, dt); if (s.helper) animateHuman(helper, visualTime, dt); customers.forEach(g => animateHuman(g, visualTime, dt)); if (lanesOf(s) > 1) customers2.forEach(g => animateHuman(g, visualTime, dt));
   renderer.render(scene, camera);
 }
 $('save-note').textContent = `${loaded.notice || '自動儲存於此瀏覽器 · 支援觸控與鍵盤'} · 版本 ${buildLabel}`;

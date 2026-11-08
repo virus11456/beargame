@@ -18,7 +18,7 @@ test('guide follows the real loop: hunt → loot → table → cash → pad → 
 
 test('guide prioritizes recovery and never points at the locked helper', () => {
   const s = fresh(); s.z = -12; s.hp = 20; assert.equal(nextAction(s).id, 'heal');
-  s.hp = 100; s.coins = 5000; s.upgrades = { weapon: 5, bag: 5, speed: 4, herd: 3 }; assert.equal(nextAction(s).id, 'hunt');
+  s.hp = 100; s.coins = 5000; s.upgrades = { weapon: 5, bag: 7, speed: 5, herd: 5 }; assert.equal(nextAction(s).id, 'hunt');
   s.sold = 30; assert.equal(nextAction(s).pad, 'helper');
 });
 
