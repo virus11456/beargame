@@ -24,3 +24,15 @@ export function resetGame(storage, state) {
   storage.setItem(SAVE_KEY, serialize(state));
   storage.removeItem(SAVE_KEY + '-backup');
 }
+
+// Transfer codes let a camp move between devices without a server: the
+// state is serialized without the prey and loot (they respawn) and encoded
+// as base64 text the player can copy and paste.
+const bytesToBase64 = bytes => { let bin = ''; for (const b of bytes) bin += String.fromCharCode(b); return btoa(bin); };
+const base64ToBytes = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
+export const exportCode = state => bytesToBase64(new TextEncoder().encode(serialize({ ...state, bears: [], drops: [], padLatch: null })));
+export function importCode(text) {
+  const clean = String(text || '').replace(/\s+/g, '');
+  if (!clean) throw Error('empty');
+  return parseSave(new TextDecoder().decode(base64ToBytes(clean)));
+}

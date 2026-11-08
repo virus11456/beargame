@@ -5,7 +5,7 @@ import { gatesOf, maxCamp, buildingSlots } from './src/camp.js';
 import { themes } from './src/stages.js';
 import { padRadius, assistantCapacity } from './src/progression.js';
 import { nextAction, padLabel } from './src/guide.js';
-import { loadGame, saveGame, resetGame } from './src/storage.js';
+import { loadGame, saveGame, resetGame, exportCode, importCode } from './src/storage.js';
 import { icon, installSprite, iconDataUrl } from './src/icons.js';
 installSprite(document);
 import { counter, customerCount } from './src/customers.js';
@@ -17,7 +17,9 @@ const buildLabel = (() => { const d = new Date(build.built); const pad = n => St
 $('version').textContent = buildLabel;
 let loaded; try { loaded = loadGame(localStorage); } catch { loaded = { state: fresh(), notice: '無法使用瀏覽器存檔。' }; }
 let s = loaded.state;
-let running = false, sound = true, low = false, audio, keys = {}, joy = { x: 0, z: 0 }, target = null, saveClock = 0, toastUntil = 0;
+const SETTINGS_KEY = 'polar-camp-settings'; let settings = {}; try { settings = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch { }
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let running = false, sound = settings.sound !== false, low = settings.low === true, musicOn = settings.music !== false, audio, keys = {}, joy = { x: 0, z: 0 }, target = null, saveClock = 0, toastUntil = 0;
 
 // ---------- renderer, camera, light ----------
 const scene = new THREE.Scene(); scene.background = new THREE.Color('#e4edf1'); scene.fog = new THREE.Fog('#e4edf1', 60, 120);
@@ -25,7 +27,7 @@ let renderer;
 try { renderer = new THREE.WebGLRenderer({ canvas: $('game'), antialias: true, powerPreference: 'high-performance' }); }
 catch { $('save-note').textContent = '無法啟動 WebGL，請使用支援 WebGL 2 的瀏覽器。'; $('start').disabled = true; throw Error('WebGL unavailable'); }
 const coarse = matchMedia('(pointer:coarse)').matches, maxRatio = coarse ? 1.5 : 1.8;
-renderer.setPixelRatio(Math.min(devicePixelRatio, maxRatio)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); renderer.shadowMap.enabled = !low; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.08;
 const camera = new THREE.OrthographicCamera(-18, 18, 18, -18, .1, 160);
 const follow = new THREE.Vector3(s.x, 0, s.z), cameraOffset = new THREE.Vector3(26, 34, 26);
@@ -41,7 +43,7 @@ const ball = (parent, color, x, y, z, w, h, d, shadow = false) => part(parent, c
 const noise = n => { const v = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
 function flatRing(x, z, color, r, width = .08, opacity = .9) {
   const m = new THREE.Mesh(new THREE.RingGeometry(r - width, r, 48), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity, depthWrite: false }));
-  m.rotation.x = -Math.PI / 2; m.position.set(x, .05, z); scene.add(m); return m;
+  m.rotation.x = -Math.PI / 2; m.position.set(x, .11, z); scene.add(m); return m;
 }
 function cone(parent, c, x, y, z, r, h) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), material(c)); m.position.set(x, y, z); m.castShadow = true; parent.add(m); return m; }
 const dummy = new THREE.Object3D();
@@ -126,10 +128,12 @@ box(cashGroup, '#a9865c', 0, .08, 0, 1.9, .16, 1.5); const cashPile = instanced(
 flatRing(cashPoint.x, cashPoint.z, '#9ff39a', cashRange, .09, .7);
 const padViews = pads.map(p => {
   const tile = rbox(scene, '#efe5d0', p.x, .04, p.z, 2.4, .08, 2.4, false); const inner = rbox(scene, '#e6d7b8', p.x, .06, p.z, 1.5, .08, 1.5, false);
-  const ring = flatRing(p.x, p.z, '#ffffff', padRadius, .07, .8); const glow = flatRing(p.x, p.z, '#5fd45a', padRadius - .25, .22, 0);
+  const ring = flatRing(p.x, p.z, '#ffffff', padRadius, .07, .55); const glow = flatRing(p.x, p.z, '#5fd45a', padRadius - .25, .22, 0);
+  const arc = new THREE.Mesh(new THREE.RingGeometry(padRadius + .03, padRadius + .2, 48, 1, 0, .001), new THREE.MeshBasicMaterial({ color: '#f0b23a', side: THREE.DoubleSide, transparent: true, opacity: .95, depthWrite: false }));
+  arc.rotation.x = -Math.PI / 2; arc.rotation.z = Math.PI / 2; arc.position.set(p.x, .115, p.z); arc.visible = false; arc.userData.frac = 0; scene.add(arc);
   const decal = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshBasicMaterial({ map: new THREE.TextureLoader().load(iconDataUrl(p.icon, '#8a6a4a')), transparent: true, depthWrite: false }));
   decal.material.map.colorSpace = THREE.SRGBColorSpace; decal.rotation.x = -Math.PI / 2; decal.rotation.z = -Math.PI / 4; decal.position.set(p.x, .12, p.z); scene.add(decal);
-  return { pad: p, tile, inner, ring, glow, decal };
+  return { pad: p, tile, inner, ring, glow, decal, arc };
 });
 
 // ---------- labels (DOM, projected) ----------
@@ -255,6 +259,34 @@ for (let i = 0; i < snowCount; i++) { snowPos[i * 3] = (noise(i) - .5) * 60; sno
 snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
 const snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: '#ffffff', size: .22, transparent: true, opacity: .75, depthWrite: false })); scene.add(snow);
 
+// ---------- music (synthesized: wind bed + slow pentatonic lullaby per stage theme) ----------
+const scales = { snow: [262, 294, 330, 392, 440], ice: [294, 349, 392, 440, 523], dusk: [247, 294, 330, 370, 440], aurora: [220, 262, 294, 330, 392], night: [196, 233, 262, 311, 349] };
+let music = null, nextBeat = 0, beat = 0;
+function startMusic() {
+  if (!audio || music) return;
+  if (!noiseBuffer) { noiseBuffer = audio.createBuffer(1, audio.sampleRate, audio.sampleRate); const d = noiseBuffer.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const master = audio.createGain(); master.gain.value = 0; master.connect(audio.destination);
+  const wind = audio.createBufferSource(); wind.buffer = noiseBuffer; wind.loop = true; const lp = audio.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = .6;
+  const lfo = audio.createOscillator(); lfo.frequency.value = .07; const depth = audio.createGain(); depth.gain.value = 260; lfo.connect(depth); depth.connect(lp.frequency);
+  const windGain = audio.createGain(); windGain.gain.value = .5; wind.connect(lp); lp.connect(windGain); windGain.connect(master); wind.start(); lfo.start();
+  music = { master }; nextBeat = audio.currentTime + .2; beat = 0;
+}
+function pluck(f, at, len, gain) { const o = audio.createOscillator(), g = audio.createGain(); o.type = 'triangle'; o.frequency.value = f; g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(gain, at + .06); g.gain.exponentialRampToValueAtTime(.001, at + len); o.connect(g); g.connect(music.master); o.start(at); o.stop(at + len + .05); }
+function scheduleMusic() {
+  if (!audio || !music) return;
+  const level = !musicOn || document.hidden ? 0 : running ? .55 : .28; music.master.gain.setTargetAtTime(level, audio.currentTime, .9);
+  if (level === 0) { nextBeat = Math.max(nextBeat, audio.currentTime); return; }
+  const scale = scales[stageOf(s).theme] || scales.snow;
+  while (nextBeat < audio.currentTime + .8) {
+    const stepIn = beat % 8;
+    if (stepIn === 0) pluck(scale[0] / 2, nextBeat, 2.4, .05);
+    if (stepIn % 2 === 0 || noise(beat) < .35) pluck(scale[Math.floor(noise(beat * 1.7 + 3) * scale.length)], nextBeat, 1.4, stepIn === 0 ? .022 : .03);
+    nextBeat += .62; beat++;
+  }
+}
+const buzz = ms => { if (sound && navigator.vibrate) try { navigator.vibrate(ms); } catch { } };
+function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ sound, low, music: musicOn })); } catch { } }
+
 // ---------- audio & UI helpers ----------
 function beep(f = 500, len = .1, type = 'sine', gain = .04) { if (!sound || !audio) return; const o = audio.createOscillator(), g = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, audio.currentTime); o.frequency.exponentialRampToValueAtTime(Math.max(40, f * .6), audio.currentTime + len); g.gain.setValueAtTime(gain, audio.currentTime); g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + len); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + len + .02); }
 let noiseBuffer = null;
@@ -283,10 +315,25 @@ const sfx = {
 function toast(t) { $('toast').textContent = t; $('toast').style.opacity = 1; toastUntil = performance.now() + 2400; }
 function save() { try { saveGame(localStorage, s); } catch { $('save-note').textContent = '瀏覽器不允許儲存，進度只保留於本次遊玩。'; } }
 function stop() { if (storyMode) { $('story').hidden = true; storyMode = null; } renderStages(); running = false; keys = {}; clearJoy(); target = null; $('menu').hidden = false; $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`; save(); }
-$('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { } $('menu').hidden = true; if (!s.storySeen) showStory('intro'); else running = true; };
+$('start').onclick = () => { try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); startMusic(); } catch { } $('menu').hidden = true; if (!s.storySeen) showStory('intro'); else running = true; };
 $('pause').onclick = stop;
-$('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; };
-$('quality').onclick = () => { low = !low; renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; };
+$('sound').onclick = () => { sound = !sound; $('sound').textContent = `音效：${sound ? '開' : '關'}`; saveSettings(); };
+$('music').onclick = () => { musicOn = !musicOn; $('music').textContent = `音樂：${musicOn ? '開' : '關'}`; saveSettings(); try { audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); startMusic(); } catch { } };
+function applyQuality() { renderer.shadowMap.enabled = !low; renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, maxRatio)); snow.visible = !low; $('quality').textContent = `畫質：${low ? '省電' : '標準'}`; }
+$('quality').onclick = () => { low = !low; applyQuality(); saveSettings(); };
+$('sound').textContent = `音效：${sound ? '開' : '關'}`; $('music').textContent = `音樂：${musicOn ? '開' : '關'}`; applyQuality();
+$('export').onclick = async () => {
+  const code = exportCode(s); let copied = false;
+  try { await navigator.clipboard.writeText(code); copied = true; } catch { }
+  if (copied) $('save-note').textContent = `進度代碼已複製（${code.length} 字）。到另一台裝置按「匯入進度」貼上即可。`;
+  else prompt('複製這段進度代碼，到另一台裝置按「匯入進度」貼上：', code);
+};
+$('import').onclick = () => {
+  const text = prompt('貼上另一台裝置匯出的進度代碼：'); if (!text) return;
+  let next; try { next = importCode(text); } catch { alert('這段代碼無法辨識，請確認有完整複製。'); return; }
+  if (!confirm(`匯入「${next.name}」第 ${next.stage + 1} 關、${next.coins} 元的進度？目前這座營地會被取代。`)) return;
+  switchState(next, '進度匯入完成！'); $('menu').hidden = false; running = false;
+};
 function restart() {
   if (!confirm('確定清除目前的營地進度，重新開始？')) return;
   try { resetGame(localStorage, fresh()); } catch { }
@@ -435,10 +482,10 @@ function draw(t) {
         else if (e.type === 'tip') showCoach(e.id);
         else if (e.type === 'star') { burst(s.x, s.z, '#f0b23a'); for (let i = 0; i < 8; i++) spark(s.x + Math.cos(i * .8) * 1.1, s.z + Math.sin(i * .8) * 1.1, '#ffd54a', .32, .6, 3); sfx.star(); if (e.stars > 1 || !stageCleared(s) || s.earned > stageOf(s).goal) toast(`第 ${e.stars} 顆星！${e.label}`); save(); }
         else if (e.type === 'sale') { transfer('meat', { x: table.x + .8, z: table.z }, e.customer, 3); transfer('bill', e.customer, cashPoint, 2.4); }
-        else if (e.type === 'built') { burst(e.x, e.z); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
-        else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); sfx.hurt(); shake = Math.max(shake, .1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
+        else if (e.type === 'built') { burst(e.x, e.z); buzz(18); toast(e.id === 'weapon' ? `換上${weaponStats(s.upgrades.weapon).name}！揮砍更寬更痛` : e.id === 'tower' ? `箭塔 Lv.${s.upgrades.tower} 建好了，門外的獵物會被自動射擊` : e.id === 'cashier' ? '收銀員上工，桌邊的錢會自動進錢包' : e.id === 'hunter' ? `第 ${s.upgrades.hunter} 位獵人出門狩獵了` : `${e.name} 升級完成！`); sfx.built(); save(); if (e.id === 'weapon') { burst(s.x, s.z, '#ffffff'); for (let i = 0; i < 6; i++) spark(s.x + Math.cos(i) * .8, s.z + Math.sin(i) * .8, '#ffe28a', .3, .5, 3); } }
+        else if (e.type === 'hurt') { spark(s.x, s.z, '#ff6b6b', .3, .2, 1); sfx.hurt(); buzz(12); shake = Math.max(shake, .1); const g = preyAt(e.x, e.z, e.id); if (g) g.userData.lunge = .35; }
         else if (e.type === 'rescue') { target = null; toast('你倒下了，被送回營地休息；背上的肉還在。'); }
-        else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); sfx.fanfare(); save(); setTimeout(() => showStory('clear'), 900); }
+        else if (e.type === 'stageClear') { burst(s.x, s.z, '#ffd54a'); sfx.fanfare(); buzz([30, 40, 30]); save(); setTimeout(() => showStory('clear'), 900); }
       }
       acc -= 1 / 30;
     }
@@ -468,9 +515,16 @@ function draw(t) {
 
   // guide arrow at the player's feet
   if (currentAction && running) { const dx = currentAction.x - s.x, dz = currentAction.z - s.z, dd = Math.hypot(dx, dz); guideGroup.visible = dd > 3 && currentAction.id !== 'auto'; guideGroup.position.set(player.position.x, 0, player.position.z); guideGroup.rotation.y = Math.atan2(dx, dz); guideArrow.material.color.set(currentAction.id === 'cash' ? '#5fd45a' : currentAction.id === 'table' ? '#e5717e' : currentAction.id === 'pad' ? '#f0c75a' : '#ffffff'); guideArrow.position.z = 1.9 + Math.sin(visualTime * 6) * .15; } else guideGroup.visible = false;
+  scheduleMusic();
+  // coaching halo follows its target and pulses until the action is done or it times out
+  if (coach.id) {
+    const c = running ? coachTarget() : null;
+    if (!c || visualTime > coach.until) { coach.id = null; coach.ring.visible = false; }
+    else { coach.ring.visible = true; coach.ring.position.set(c.x, .12, c.z); const pulse = .5 + .5 * Math.sin(visualTime * 5); coach.ring.scale.setScalar(.85 + pulse * .35); coach.ring.material.opacity = .45 + pulse * .5; }
+  }
   // camera and sun follow the player
   follow.lerp(new THREE.Vector3(s.x, 0, s.z), 1 - Math.exp(-dt * 4.5));
-  camera.position.copy(follow).add(cameraOffset); camera.lookAt(follow); if (shake > 0) { shake = Math.max(0, shake - dt * 1.8); camera.position.x += (Math.random() - .5) * shake * .9; camera.position.y += (Math.random() - .5) * shake * .6; }
+  camera.position.copy(follow).add(cameraOffset); camera.lookAt(follow); if (reduceMotion) shake = 0; if (shake > 0) { shake = Math.max(0, shake - dt * 1.8); camera.position.x += (Math.random() - .5) * shake * .9; camera.position.y += (Math.random() - .5) * shake * .6; }
   sun.position.set(follow.x - 18, 32, follow.z + 14); sun.target.position.copy(follow);
   for (const r of auroraRibbons) { const pos = r.geometry.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, Math.sin(visualTime * .9 + pos.getX(i) * .18 + r.userData.phase) * 1.6 + (i % 2 ? 3.5 : -3.5)); pos.needsUpdate = true; }
   for (const tch of torches) { const f = .85 + Math.sin(visualTime * 11 + tch.phase * 2) * .18 + Math.sin(visualTime * 23 + tch.phase) * .08; tch.flame.scale.set(f, f * 1.1, f); tch.light.intensity = 1.3 + f * .5; }
@@ -512,9 +566,12 @@ function draw(t) {
   cashLabel.p.set(cashPoint.x, .6 + billCount / 6 * .075 + .4, cashPoint.z + .6); tableLabel.p.set(table.x + .8, 1.5 + Math.ceil(s.stock / 10) * .22, table.z - 2.2);
 
   // pads
-  padViews.forEach(({ pad: p, ring, glow, inner }) => {
+  padViews.forEach(({ pad: p, ring, glow, inner, arc }) => {
     const cost = price(s, p.id); const active = s.padLatch !== p.id && cost !== null && distance(s, p) < padRadius;
     const paid = cost ? s.paid[p.id] / cost : 0;
+    // Payment progress arc around the pad: rebuilt only when the paid share changes.
+    if (Math.abs(paid - arc.userData.frac) > .004) { arc.geometry.dispose(); arc.geometry = new THREE.RingGeometry(padRadius + .03, padRadius + .2, 48, 1, 0, Math.max(.001, paid * Math.PI * 2)); arc.userData.frac = paid; }
+    arc.visible = paid > 0;
     glow.material.opacity = active ? .5 + Math.sin(visualTime * 8) * .2 : paid > 0 ? .35 : 0; glow.scale.setScalar(.4 + paid * .6 + (active ? .05 : 0));
     ring.material.color.set(cost === null ? '#9fc4d0' : s.coins >= cost - s.paid[p.id] ? '#9ff39a' : '#ffffff'); inner.material = material(cost === null ? '#cfdfe4' : '#e6d7b8');
   });
@@ -550,5 +607,5 @@ function draw(t) {
 $('save-note').textContent = `${loaded.notice || '自動儲存於此瀏覽器 · 支援觸控與鍵盤'} · 版本 ${buildLabel}`;
 if (s.time > 0) $('start').innerHTML = `繼續經營 <span>${icon('arrow')}</span>`;
 buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle);
-if (location.search.includes('debug')) window.__polar = { state: () => s, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), prey: i => { const g = bearViews[i]; const w = new THREE.Vector3(); g.userData.body.getWorldPosition(w); return { visible: g.visible, dying: g.userData.dying, spawn: g.userData.spawn, pos: [g.position.x, g.position.y, g.position.z], inner: [g.userData.inner.position.x, g.userData.inner.position.y, g.userData.inner.position.z], rot: [g.userData.inner.rotation.x, g.userData.inner.rotation.z], scale: g.userData.inner.scale.y, world: [w.x, w.y, w.z] }; }, slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
+if (location.search.includes("debug")) window.__polar = { state: () => s, scene, pads: () => padViews, coach, teleport(x, z) { s.x = x; s.z = z; target = null; }, fps: () => 1 / Math.max(1e-3, lastFrame), prey: i => { const g = bearViews[i]; const w = new THREE.Vector3(); g.userData.body.getWorldPosition(w); return { visible: g.visible, dying: g.userData.dying, spawn: g.userData.spawn, pos: [g.position.x, g.position.y, g.position.z], inner: [g.userData.inner.position.x, g.userData.inner.position.y, g.userData.inner.position.z], rot: [g.userData.inner.rotation.x, g.userData.inner.rotation.z], scale: g.userData.inner.scale.y, world: [w.x, w.y, w.z] }; }, slash(hold = .2) { attackVisual = hold; attackAim = s.face; buildSlash(weaponStats(s.upgrades.weapon).range, weaponStats(s.upgrades.weapon).angle); slashGroup.position.set(s.x, 0, s.z); slashGroup.rotation.y = s.face - Math.PI / 2; } };
 applyTheme(); rebuildCamp(); syncBuildings(false); renderStages(); updateHud(); requestAnimationFrame(draw);
